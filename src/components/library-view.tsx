@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ItemCard } from "@/components/item-card";
 import { ItemDetailDialog } from "@/components/item-detail-dialog";
+import { CollectionsRow } from "@/components/collections-row";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { swatchHex } from "@/lib/color";
 import { cn } from "@/lib/utils";
@@ -33,11 +34,15 @@ export function LibraryView({
   fixedType,
   initialTag = null,
   initialColor = null,
+  initialCollection = null,
+  showCollections = false,
   emptyMessage = "Nothing here yet. Paste an image or link anywhere to save it.",
 }: {
   fixedType?: ItemType;
   initialTag?: string | null;
   initialColor?: string | null;
+  initialCollection?: string | null;
+  showCollections?: boolean;
   emptyMessage?: string;
 }) {
   const [search, setSearch] = useState("");
@@ -45,6 +50,7 @@ export function LibraryView({
   const [type, setType] = useState<ItemType | "all">(fixedType ?? "all");
   const [tag, setTag] = useState<string | null>(initialTag);
   const [color, setColor] = useState<string | null>(initialColor);
+  const [collection, setCollection] = useState<string | null>(initialCollection);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -75,9 +81,10 @@ export function LibraryView({
     if (effectiveType !== "all") params.set("type", effectiveType);
     if (tag) params.set("tag", tag);
     if (color) params.set("color", color);
+    if (collection) params.set("collection", collection);
     if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
     return `/api/items?${params.toString()}`;
-  }, [effectiveType, tag, color, debouncedSearch]);
+  }, [effectiveType, tag, color, collection, debouncedSearch]);
 
   const { data, isLoading } = useSWR<{ items: ApiItem[] }>(queryKey);
   const { data: tagsData } = useSWR<{
@@ -91,7 +98,16 @@ export function LibraryView({
 
   return (
     <div className="flex h-full flex-col">
+      {showCollections && <CollectionsRow activeSlug={collection} />}
       <div className="space-y-4 px-6 pb-4 pt-6">
+        {collection && (
+          <button
+            onClick={() => setCollection(null)}
+            className="text-xs text-muted-foreground underline underline-offset-2"
+          >
+            Clear collection filter
+          </button>
+        )}
         <div className="flex items-center gap-4">
           <div className="relative max-w-xs flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

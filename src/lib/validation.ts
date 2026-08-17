@@ -43,6 +43,7 @@ export const updateItemSchema = z.object({
   bodyText: z.string().optional(),
   bodyJson: z.unknown().optional(),
   tags: z.array(z.string()).optional(),
+  collections: z.array(z.string()).optional(),
 });
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 
@@ -50,7 +51,15 @@ export const listItemsQuerySchema = z.object({
   type: z.enum(itemTypeValues).optional(),
   tag: z.string().optional(),
   color: z.string().optional(),
+  collection: z.string().optional(),
   q: z.string().optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+export const createCollectionSchema = z.object({
+  name: z.string().min(1).max(80),
+});
+export const renameCollectionSchema = z.object({
+  name: z.string().min(1).max(80),
 });

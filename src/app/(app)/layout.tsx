@@ -4,6 +4,8 @@ import { TopNav } from "@/components/top-nav";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CommandPalette } from "@/components/command-palette";
+import { SearchTriggerButton } from "@/components/search-trigger-button";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <TopNav />
 
           <div className="flex items-center justify-end gap-1.5">
+            <SearchTriggerButton />
             <Button variant="outline" size="icon-sm" render={<Link href="/tags" />}>
               <Tag className="size-4" />
             </Button>
@@ -39,6 +42,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <PasteCaptureProvider />
+      <CommandPalette />
     </SwrProvider>
   );
 }

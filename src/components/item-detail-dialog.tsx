@@ -14,6 +14,27 @@ import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
 
+/** Blends up to 3 of the item's dominant colors into offset radial
+ * gradients — an Apple-TV-style ambient wash behind the lightbox content,
+ * rather than one flat tinted circle. */
+function buildAmbientGlow(
+  colors: { hex: string; percentage: number }[] | null | undefined,
+): string | null {
+  if (!colors || colors.length === 0) return null;
+  const positions = [
+    "35% 25%",
+    "75% 65%",
+    "20% 80%",
+  ];
+  return colors
+    .slice(0, 3)
+    .map(
+      (c, i) =>
+        `radial-gradient(45% 45% at ${positions[i]}, ${c.hex}, transparent 70%)`,
+    )
+    .join(", ");
+}
+
 export function ItemDetailDialog({
   itemId,
   onOpenChange,
@@ -96,6 +117,17 @@ function ItemDetailContent({
     refreshLibrary();
   }
 
+  async function saveCollections(names: string[]) {
+    await fetch(`/api/items/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collections: names }),
+    });
+    mutate();
+    void globalMutate("/api/collections");
+    refreshLibrary();
+  }
+
   async function handleDelete() {
     await fetch(`/api/items/${item.id}`, { method: "DELETE" });
     toast.success("Deleted");
@@ -103,17 +135,15 @@ function ItemDetailContent({
     refreshLibrary();
   }
 
-  const glowColor = item.dominantColors?.[0]?.hex;
+  const glow = buildAmbientGlow(item.dominantColors);
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
-      {glowColor && (
+      {glow && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-50 blur-[140px]"
-          style={{
-            backgroundImage: `radial-gradient(60% 55% at 32% 28%, ${glowColor}, transparent 70%)`,
-          }}
+          className="pointer-events-none absolute inset-0 opacity-60 blur-[130px]"
+          style={{ backgroundImage: glow }}
         />
       )}
 
@@ -182,6 +212,16 @@ function ItemDetailContent({
               </a>
             </div>
           )}
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              Collections
+            </p>
+            <TagEditor
+              tags={item.collections.map((c) => c.name)}
+              onChange={saveCollections}
+            />
+          </div>
 
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Tags</p>

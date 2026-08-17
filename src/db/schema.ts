@@ -150,6 +150,46 @@ export const itemTags = pgTable(
 );
 
 /**
+ * User-organized folders ("Collections", jeetcreates.cc/reference-app
+ * style) — a lightweight many-to-many grouping, independent of tags and
+ * of boards. An item can belong to any number of collections.
+ */
+export const collections = pgTable(
+  "collections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [uniqueIndex("collections_slug_idx").on(table.slug)],
+);
+
+export const itemCollections = pgTable(
+  "item_collections",
+  {
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("item_collections_pk_idx").on(table.itemId, table.collectionId),
+    index("item_collections_collection_id_idx").on(table.collectionId),
+  ],
+);
+
+/**
  * Canvas "files" (FigJam-style, multiple boards). A board is a spatial view
  * layered on top of items via item_positions — it is not a separate content
  * store, so any item can be placed on any board without duplicating data.

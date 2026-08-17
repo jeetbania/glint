@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FileText, CheckSquare, Link as LinkIcon } from "lucide-react";
+import { FileText, CheckSquare, Link as LinkIcon, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 
@@ -40,6 +40,31 @@ function HoverScrim({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Floating corner controls that appear on card hover, over image/preview
+ * content — a selection affordance top-left and an explicit "expand"
+ * hint bottom-right, both rendered as neutral glass circles so they read
+ * against any image regardless of its own colors. */
+function HoverControls({ showSelect = true }: { showSelect?: boolean }) {
+  return (
+    <>
+      {showSelect && (
+        <span
+          aria-hidden
+          className="absolute left-2 top-2 flex size-7 items-center justify-center rounded-full border border-white/25 bg-black/35 opacity-0 backdrop-blur-md transition-opacity duration-150 group-hover:opacity-100"
+        >
+          <span className="size-3 rounded-full border-[1.5px] border-white/80" />
+        </span>
+      )}
+      <span
+        aria-hidden
+        className="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-full border border-white/25 bg-black/35 opacity-0 backdrop-blur-md transition-opacity duration-150 group-hover:opacity-100"
+      >
+        <Maximize2 className="size-3.5 text-white" />
+      </span>
+    </>
+  );
+}
+
 function TypeIcon({
   icon: Icon,
   gradient,
@@ -75,6 +100,7 @@ function ImageCardBody({ item }: { item: ApiItem }) {
         className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         unoptimized
       />
+      <HoverControls />
       {(hasTags || hasColors) && (
         <HoverScrim>
           <div className="flex flex-wrap gap-1">
@@ -127,6 +153,7 @@ function LinkCardBody({ item }: { item: ApiItem }) {
             {item.domain ?? item.url}
           </span>
         </div>
+        <HoverControls showSelect={false} />
         <HoverScrim>
           <p className="line-clamp-2 text-xs font-medium text-white">
             {item.title ?? item.url}

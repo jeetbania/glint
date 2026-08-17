@@ -4,6 +4,8 @@ import {
   items,
   itemTags,
   tags,
+  itemCollections,
+  collections,
   type ItemType,
   type ItemStatus,
 } from "@/db/schema";
@@ -11,6 +13,7 @@ import { slugify } from "@/lib/slug";
 
 export type ItemWithTags = typeof items.$inferSelect & {
   tags: { id: string; name: string; slug: string; color: string | null }[];
+  collections: { id: string; name: string; slug: string }[];
 };
 
 export type ListItemsFilters = {
@@ -18,38 +21,63 @@ export type ListItemsFilters = {
   status?: ItemStatus;
   tagSlug?: string;
   color?: string;
+  collectionSlug?: string;
   q?: string;
   limit?: number;
   offset?: number;
 };
 
-/** Attach tags to a list of items in one bulk query instead of N+1. */
+/** Attach tags + collections to a list of items in bulk queries instead
+ * of N+1. */
 async function attachTags(
   rows: (typeof items.$inferSelect)[],
 ): Promise<ItemWithTags[]> {
   if (rows.length === 0) return [];
   const db = getDb();
   const ids = rows.map((r) => r.id);
-  const tagRows = await db
-    .select({
-      itemId: itemTags.itemId,
-      id: tags.id,
-      name: tags.name,
-      slug: tags.slug,
-      color: tags.color,
-    })
-    .from(itemTags)
-    .innerJoin(tags, eq(itemTags.tagId, tags.id))
-    .where(inArray(itemTags.itemId, ids));
+  const [tagRows, collectionRows] = await Promise.all([
+    db
+      .select({
+        itemId: itemTags.itemId,
+        id: tags.id,
+        name: tags.name,
+        slug: tags.slug,
+        color: tags.color,
+      })
+      .from(itemTags)
+      .innerJoin(tags, eq(itemTags.tagId, tags.id))
+      .where(inArray(itemTags.itemId, ids)),
+    db
+      .select({
+        itemId: itemCollections.itemId,
+        id: collections.id,
+        name: collections.name,
+        slug: collections.slug,
+      })
+      .from(itemCollections)
+      .innerJoin(collections, eq(collections.id, itemCollections.collectionId))
+      .where(inArray(itemCollections.itemId, ids)),
+  ]);
 
-  const byItem = new Map<string, ItemWithTags["tags"]>();
+  const tagsByItem = new Map<string, ItemWithTags["tags"]>();
   for (const t of tagRows) {
-    const list = byItem.get(t.itemId) ?? [];
+    const list = tagsByItem.get(t.itemId) ?? [];
     list.push({ id: t.id, name: t.name, slug: t.slug, color: t.color });
-    byItem.set(t.itemId, list);
+    tagsByItem.set(t.itemId, list);
   }
 
-  return rows.map((row) => ({ ...row, tags: byItem.get(row.id) ?? [] }));
+  const collectionsByItem = new Map<string, ItemWithTags["collections"]>();
+  for (const c of collectionRows) {
+    const list = collectionsByItem.get(c.itemId) ?? [];
+    list.push({ id: c.id, name: c.name, slug: c.slug });
+    collectionsByItem.set(c.itemId, list);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    tags: tagsByItem.get(row.id) ?? [],
+    collections: collectionsByItem.get(row.id) ?? [],
+  }));
 }
 
 export async function listItems(
@@ -75,6 +103,15 @@ export async function listItems(
         SELECT ${itemTags.itemId} FROM ${itemTags}
         INNER JOIN ${tags} ON ${tags.id} = ${itemTags.tagId}
         WHERE ${tags.slug} = ${filters.tagSlug}
+      )`,
+    );
+  }
+  if (filters.collectionSlug) {
+    conditions.push(
+      sql`${items.id} IN (
+        SELECT ${itemCollections.itemId} FROM ${itemCollections}
+        INNER JOIN ${collections} ON ${collections.id} = ${itemCollections.collectionId}
+        WHERE ${collections.slug} = ${filters.collectionSlug}
       )`,
     );
   }

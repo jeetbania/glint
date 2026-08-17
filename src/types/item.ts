@@ -1,6 +1,7 @@
 export type ItemType = "image" | "link" | "note" | "task";
 
 export type ApiTag = { id: string; name: string; slug: string; color: string | null };
+export type ApiCollection = { id: string; name: string; slug: string };
 
 export type ApiItem = {
   id: string;
@@ -28,4 +29,5 @@ export type ApiItem = {
   createdAt: string;
   updatedAt: string;
   tags: ApiTag[];
+  collections: ApiCollection[];
 };
