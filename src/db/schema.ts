@@ -90,6 +90,12 @@ export const items = pgTable(
       .notNull()
       .default("active"),
 
+    // Task-only — the Things-style Tasks view's checkbox state. Lives on
+    // the shared items table (not a separate task_details table) since
+    // every other type-specific field here (url, blobUrl, …) already
+    // follows that pattern; harmless `false` default on non-task rows.
+    completed: boolean("completed").notNull().default(false),
+
     searchVector: tsvector("search_vector").generatedAlwaysAs(
       (): ReturnType<typeof sql> =>
         sql`to_tsvector('english',

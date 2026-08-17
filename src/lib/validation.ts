@@ -42,6 +42,7 @@ export const updateItemSchema = z.object({
   title: z.string().optional(),
   bodyText: z.string().optional(),
   bodyJson: z.unknown().optional(),
+  completed: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
   collections: z.array(z.string()).optional(),
 });

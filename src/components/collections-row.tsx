@@ -9,7 +9,7 @@ import { animate } from "motion";
 import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
-import { hueForIndex as sharedHueForIndex } from "@/lib/folder-color";
+import { hueForIndex } from "@/lib/folder-color";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
   DropdownMenu,
@@ -34,22 +34,14 @@ type CollectionPreview = {
   previews: string[];
 };
 
-// Colors: a full-bleed diagonal two-tone pastel gradient per folder,
-// ported directly off jeetcreates.cc's own project cards (not the flat
-// dark #2A2A2A/#1C1C1C frame from the earlier Paper-mockup pass — that
-// was only ever meant to show the *layout*, not the final colors).
-// Both hues are assigned by position (golden-angle spacing, ~137.5°
-// apart) rather than hashed from the id, so no two folders can land on
-// the same color regardless of how many exist. The actual
-// lightness/chroma differ between light and dark mode (see the
-// --folder-l1/-l2/-c tokens in globals.css) so the same hue pair reads
-// as an airy pastel in light mode and a richer, non-washed-out tone in
-// dark mode — "different colours for both modes," not one recipe
-// stretched across both.
-function hueForIndex(index: number): { a: number; b: number } {
-  const a = sharedHueForIndex(index);
-  return { a, b: Math.round((a + 45) % 360) };
-}
+// Colors: a single pastel hue per folder, rendered as translucent
+// frosted glass (blur + partial opacity) rather than an opaque fill —
+// per explicit feedback, not a gradient and not a flat sticker. Hue is
+// assigned by position (golden-angle spacing, ~137.5° apart) rather
+// than hashed from the id, so no two folders can land on the same
+// color regardless of how many exist — and it's the same hue the Notes
+// sidebar uses for this folder's icon (see lib/folder-color.ts), so a
+// given folder reads as one consistent color everywhere it shows up.
 
 // Fan-out hover animation for the peeking preview images — restored
 // from the pre-Paper-mockup version. Imperative animate() calls on
@@ -74,7 +66,7 @@ function FolderTile({
   active,
 }: {
   collection: CollectionPreview;
-  hue: { a: number; b: number };
+  hue: number;
   active: boolean;
 }) {
   const { rename, remove } = useCollectionActions();
@@ -155,14 +147,9 @@ function FolderTile({
         <div
           onPointerEnter={open}
           onPointerLeave={close}
-          style={
-            {
-              "--folder-hue-a": hue.a,
-              "--folder-hue-b": hue.b,
-            } as React.CSSProperties
-          }
+          style={{ "--folder-hue": hue } as React.CSSProperties}
           className={cn(
-            "group relative h-72 w-56 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
+            "group relative h-60 w-56 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
@@ -173,13 +160,13 @@ function FolderTile({
             className="absolute inset-0 z-0"
           />
 
-          {/* Full-bleed gradient — the folder itself. */}
-          <div className="folder-card-gradient pointer-events-none absolute inset-0 z-0" />
+          {/* Full-bleed frosted color — the folder itself. */}
+          <div className="folder-card-glass pointer-events-none absolute inset-0 z-0" />
 
           {/* Fanned previews, peeking above the top edge on hover —
-              anchored to the upper ~45% so they read as tucked into the
+              anchored to the upper zone so they read as tucked into the
               card rather than floating loose. */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[46%] items-center justify-center">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[42%] items-center justify-center">
             {collection.previews.length > 0 ? (
               collection.previews.slice(0, 3).map((src, i) => (
                 <div
@@ -200,9 +187,10 @@ function FolderTile({
             )}
           </div>
 
-          {/* Bottom scrim + text — sits directly on the gradient, same
-              as the reference, rather than a separate opaque panel. */}
-          <div className="folder-card-scrim pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex h-[58%] flex-col justify-end gap-3 p-4">
+          {/* Bottom scrim + text — sits directly on the glass, same
+              composition as the reference, just less space between this
+              and the peeking images now that the card is shorter. */}
+          <div className="folder-card-scrim pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex h-[62%] flex-col justify-end gap-2 p-3.5">
             {isRenaming ? (
               <input
                 autoFocus
@@ -235,7 +223,12 @@ function FolderTile({
                     <button
                       type="button"
                       aria-label={`More options for ${collection.name}`}
-                      className="pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-white/90 text-foreground opacity-0 shadow-sm transition-opacity hover:bg-white group-hover:opacity-100 data-popup-open:opacity-100"
+                      // Theme-aware translucent circle (same recipe as
+                      // .glass-pill) instead of a hardcoded white one —
+                      // a flat white/90 circle read fine against the old
+                      // light-mode gradient but looked stuck-on and out
+                      // of place in dark mode.
+                      className="glass-pill pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full text-foreground opacity-0 transition-opacity hover:brightness-105 group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
                 >
@@ -300,7 +293,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
       ))}
 
       {creating ? (
-        <div className="glass-panel flex h-72 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
+        <div className="glass-panel flex h-60 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
           <input
             autoFocus
             value={draft}
@@ -321,7 +314,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="flex h-72 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] border border-dashed border-border/60 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+          className="flex h-60 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] border border-dashed border-border/60 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           <Plus className="size-5" />
           New collection

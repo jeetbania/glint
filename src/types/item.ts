@@ -26,6 +26,7 @@ export type ApiItem = {
   aiStatus: string;
   ocrText: string | null;
   status: string;
+  completed: boolean;
   createdAt: string;
   updatedAt: string;
   tags: ApiTag[];

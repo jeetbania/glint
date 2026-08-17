@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { TagEditor } from "@/components/tag-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
 
@@ -75,6 +76,8 @@ function ItemDetailContent({
 }) {
   const { mutate: globalMutate } = useSWRConfig();
   const { mutate } = useSWR<{ item: ApiItem }>(`/api/items/${item.id}`);
+  const collectionNames = useCollectionNames();
+  const tagNames = useTagNames();
   const [title, setTitle] = useState(item.title ?? "");
   const [zoom, setZoom] = useState(1);
 
@@ -254,12 +257,17 @@ function ItemDetailContent({
             <TagEditor
               tags={item.collections.map((c) => c.name)}
               onChange={saveCollections}
+              suggestions={collectionNames}
             />
           </div>
 
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Tags</p>
-            <TagEditor tags={item.tags.map((t) => t.name)} onChange={saveTags} />
+            <TagEditor
+              tags={item.tags.map((t) => t.name)}
+              onChange={saveTags}
+              suggestions={tagNames}
+            />
           </div>
         </aside>
       </div>
