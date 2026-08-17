@@ -59,7 +59,11 @@ async function main() {
     stdio: "inherit",
     env: {
       ...process.env,
-      TAURI_SIGNING_PRIVATE_KEY_PATH: KEY_PATH,
+      // This Tauri CLI version only picks up the signing key when its
+      // raw contents are passed via TAURI_SIGNING_PRIVATE_KEY — the
+      // _PATH variant is accepted by `tauri signer sign` but not by the
+      // bundler's own auto-sign step during `tauri build`.
+      TAURI_SIGNING_PRIVATE_KEY: readFileSync(KEY_PATH, "utf-8"),
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "",
     },
   });
