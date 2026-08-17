@@ -6,7 +6,7 @@ import { listTagsWithCounts } from "@/lib/items";
 export const dynamic = "force-dynamic";
 
 export default async function TagsPage() {
-  const tags = await listTagsWithCounts();
+  const tags = (await listTagsWithCounts()).filter((t) => t.count > 0);
 
   if (tags.length === 0) {
     return (

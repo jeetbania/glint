@@ -170,12 +170,15 @@ export async function listTagsWithCounts() {
       name: tags.name,
       slug: tags.slug,
       color: tags.color,
-      count: sql<number>`count(${itemTags.itemId})::int`,
+      // Count only active items — a tag whose items were all deleted
+      // should read 0, not linger with a stale count from trashed rows.
+      count: sql<number>`count(${items.id}) filter (where ${items.status} = 'active')::int`,
     })
     .from(tags)
     .leftJoin(itemTags, eq(itemTags.tagId, tags.id))
+    .leftJoin(items, eq(items.id, itemTags.itemId))
     .groupBy(tags.id)
-    .orderBy(desc(sql`count(${itemTags.itemId})`));
+    .orderBy(desc(sql`count(${items.id}) filter (where ${items.status} = 'active')`));
 }
 
 export async function listColorFamilyCounts() {
