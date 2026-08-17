@@ -18,6 +18,8 @@ import {
   Laptop,
   Download,
   Check,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocalStorage } from "@/lib/use-local-storage";
@@ -276,6 +278,122 @@ function AboutSection() {
         <Check className="size-3.5" />A personal visual bookmarking app —
         paste anything, find it later.
       </p>
+      {isTauri() && (
+        <div className="mt-5 border-t border-border/60 pt-4">
+          <UpdateCheck />
+        </div>
+      )}
+    </div>
+  );
+}
+
+type UpdateState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "up-to-date" }
+  | { status: "available"; version: string }
+  | { status: "downloading"; progress: number }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+
+/** Only mounted inside the Tauri shell (see isTauri() gate above) — the
+ * plugin packages this imports have no meaningful behavior in a browser
+ * tab, so this whole component tree stays out of the web bundle's
+ * critical path via the dynamic-ish gate at the call site. */
+function UpdateCheck() {
+  const [state, setState] = useState<UpdateState>({ status: "idle" });
+
+  async function handleCheck() {
+    setState({ status: "checking" });
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        setState({ status: "up-to-date" });
+        return;
+      }
+      setState({ status: "available", version: update.version });
+
+      let downloaded = 0;
+      let total = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          setState({
+            status: "downloading",
+            progress: total > 0 ? downloaded / total : 0,
+          });
+        } else if (event.event === "Finished") {
+          setState({ status: "ready" });
+        }
+      });
+    } catch (err) {
+      setState({
+        status: "error",
+        message: err instanceof Error ? err.message : "Update check failed",
+      });
+    }
+  }
+
+  async function handleRelaunch() {
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  }
+
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        Desktop app updates
+      </p>
+      {(state.status === "idle" || state.status === "up-to-date" || state.status === "error") && (
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCheck}>
+            <RefreshCw className="size-3.5" />
+            Check for updates
+          </Button>
+          {state.status === "up-to-date" && (
+            <span className="text-xs text-muted-foreground">You&rsquo;re up to date.</span>
+          )}
+          {state.status === "error" && (
+            <span className="text-xs text-destructive">{state.message}</span>
+          )}
+        </div>
+      )}
+      {state.status === "checking" && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          Checking for updates…
+        </p>
+      )}
+      {state.status === "available" && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          Downloading version {state.version}…
+        </p>
+      )}
+      {state.status === "downloading" && (
+        <div>
+          <div className="mb-1.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/8">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-200"
+              style={{ width: `${Math.round(state.progress * 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Downloading… {Math.round(state.progress * 100)}%
+          </p>
+        </div>
+      )}
+      {state.status === "ready" && (
+        <div className="flex items-center gap-2">
+          <Button variant="default" size="sm" onClick={handleRelaunch}>
+            Restart to update
+          </Button>
+          <span className="text-xs text-muted-foreground">Update downloaded.</span>
+        </div>
+      )}
     </div>
   );
 }

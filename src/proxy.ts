@@ -17,10 +17,12 @@ export async function proxy(_request: NextRequest) {
 }
 
 export const config = {
-  // Gate everything except the login page itself, its server action, and
-  // Next.js internals/static assets — a matcher that accidentally caught
-  // those would block CSS/JS/images from loading on the login screen.
+  // Gate everything except the login page itself, its server action,
+  // Next.js internals/static assets, and the desktop-app update manifest
+  // (the Tauri updater fetches that endpoint headlessly on launch — it
+  // can't complete an interactive login, so it must stay reachable
+  // whenever the password gate above gets switched back on).
   matcher: [
-    "/((?!login|_next/static|_next/image|favicon.ico|manifest.json).*)",
+    "/((?!login|_next/static|_next/image|favicon.ico|manifest.json|api/updates).*)",
   ],
 };
