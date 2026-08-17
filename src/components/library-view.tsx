@@ -91,10 +91,10 @@ export function LibraryView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 px-6 py-4 backdrop-blur">
+      <div className="glass-panel sticky top-3 z-10 mx-3 space-y-3 rounded-2xl px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => {
@@ -102,7 +102,7 @@ export function LibraryView({
                 debounceSearch(e.target.value);
               }}
               placeholder="Search your library…"
-              className="pl-8"
+              className="pl-9"
             />
           </div>
           {!fixedType && (
@@ -112,10 +112,10 @@ export function LibraryView({
                   key={f.value}
                   onClick={() => setType(f.value)}
                   className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    "rounded-full px-3 py-1 text-xs font-medium transition-all",
                     type === f.value
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/70",
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground",
                   )}
                 >
                   {f.label}
@@ -183,10 +183,10 @@ export function LibraryView({
                   setTag((current) => (current === t.slug ? null : t.slug))
                 }
                 className={cn(
-                  "rounded-full px-2.5 py-0.5 text-xs transition-colors",
+                  "rounded-full px-2.5 py-0.5 text-xs transition-all",
                   tag === t.slug
-                    ? "bg-foreground text-background"
-                    : "bg-muted text-muted-foreground hover:bg-muted/70",
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-foreground/6 text-muted-foreground hover:bg-foreground/10",
                 )}
               >
                 {t.name} · {t.count}

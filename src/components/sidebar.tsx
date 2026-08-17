@@ -25,9 +25,11 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-56 shrink-0 flex-col border-r bg-muted/20 px-3 py-4">
+    <aside className="glass-panel my-3 ml-3 flex h-[calc(100vh-1.5rem)] w-56 shrink-0 flex-col rounded-2xl px-3 py-4">
       <div className="px-2 pb-4">
-        <span className="text-lg font-semibold tracking-tight">mymind</span>
+        <span className="font-heading text-lg font-semibold tracking-heading">
+          Glint
+        </span>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5">
         {navItems.map(({ href, label, icon: Icon }) => {
@@ -38,10 +40,10 @@ export function Sidebar() {
               key={href}
               href={href}
               className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-2.5 rounded-full px-2.5 py-2 text-sm font-medium transition-colors",
                 active
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  ? "bg-primary/12 text-primary"
+                  : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground",
               )}
             >
               <Icon className="size-4" />

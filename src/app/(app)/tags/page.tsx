@@ -19,13 +19,15 @@ export default async function TagsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-lg font-semibold">Tags</h1>
+      <h1 className="mb-4 font-heading text-lg font-semibold tracking-heading">
+        Tags
+      </h1>
       <div className="flex flex-wrap gap-2">
         {tags.map((tag) => (
           <Link
             key={tag.id}
             href={`/library?tag=${tag.slug}`}
-            className="rounded-full bg-muted px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/70"
+            className="glass-pill px-3 py-1.5 text-sm text-foreground transition-all hover:brightness-105"
           >
             {tag.name}{" "}
             <span className="text-muted-foreground">· {tag.count}</span>

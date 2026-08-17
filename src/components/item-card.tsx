@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { FileText, CheckSquare, Link as LinkIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 
 export function ItemCard({
@@ -15,7 +16,7 @@ export function ItemCard({
     <button
       type="button"
       onClick={onClick}
-      className="group block w-full overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="glass-panel group block w-full overflow-hidden rounded-xl text-left transition-all hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {item.type === "image" && item.blobUrl && (
         <ImageCardBody item={item} />
@@ -29,7 +30,7 @@ export function ItemCard({
           {item.tags.slice(0, 4).map((tag) => (
             <span
               key={tag.id}
-              className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+              className="rounded-full bg-foreground/6 px-2 py-0.5 text-[11px] text-muted-foreground"
             >
               {tag.name}
             </span>
@@ -37,6 +38,25 @@ export function ItemCard({
         </div>
       )}
     </button>
+  );
+}
+
+function TypeIcon({
+  icon: Icon,
+  gradient,
+}: {
+  icon: typeof FileText;
+  gradient: "gradient-peach" | "gradient-lavender" | "gradient-sage";
+}) {
+  return (
+    <span
+      className={cn(
+        "flex size-4.5 items-center justify-center rounded-full",
+        gradient,
+      )}
+    >
+      <Icon className="size-2.5 text-white" />
+    </span>
   );
 }
 
@@ -83,13 +103,13 @@ function LinkCardBody({ item }: { item: ApiItem }) {
           />
         </div>
       )}
-      <div className="space-y-1 p-3">
+      <div className="space-y-1.5 p-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {item.faviconUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.faviconUrl} alt="" className="size-3.5" />
+            <img src={item.faviconUrl} alt="" className="size-3.5 rounded-sm" />
           ) : (
-            <LinkIcon className="size-3.5" />
+            <TypeIcon icon={LinkIcon} gradient="gradient-lavender" />
           )}
           <span className="truncate">{item.domain ?? item.url}</span>
         </div>
@@ -103,9 +123,9 @@ function LinkCardBody({ item }: { item: ApiItem }) {
 
 function NoteCardBody({ item }: { item: ApiItem }) {
   return (
-    <div className="space-y-1 p-3">
+    <div className="space-y-1.5 p-3">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <FileText className="size-3.5" />
+        <TypeIcon icon={FileText} gradient="gradient-peach" />
         Note
       </div>
       {item.title && <p className="text-sm font-medium">{item.title}</p>}
@@ -120,9 +140,9 @@ function NoteCardBody({ item }: { item: ApiItem }) {
 
 function TaskCardBody({ item }: { item: ApiItem }) {
   return (
-    <div className="space-y-1 p-3">
+    <div className="space-y-1.5 p-3">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <CheckSquare className="size-3.5" />
+        <TypeIcon icon={CheckSquare} gradient="gradient-sage" />
         Task
       </div>
       <p className="text-sm font-medium">{item.title}</p>

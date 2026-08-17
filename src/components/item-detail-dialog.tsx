@@ -162,7 +162,7 @@ function ItemDetailContent({
           saveTitle(e.target.value);
         }}
         placeholder="Untitled"
-        className="border-none px-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+        className="!border-none !bg-transparent !shadow-none px-0 font-heading text-lg font-semibold tracking-heading focus-visible:!ring-0"
       />
 
       {(item.type === "note" || item.type === "task") && (

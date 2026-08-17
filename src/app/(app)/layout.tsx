@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/sidebar";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
 import { SwrProvider } from "@/components/swr-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
@@ -11,7 +12,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full overflow-hidden">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center justify-end border-b px-4">
+          <header className="glass-panel mx-3 mt-3 flex h-12 shrink-0 items-center justify-end gap-1 rounded-full px-2">
+            <ThemeToggle />
             <form action={logout}>
               <Button
                 type="submit"

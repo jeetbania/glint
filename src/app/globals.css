@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-instrument-sans);
+  --font-heading: var(--font-instrument-sans);
+  --tracking-heading: -0.03em;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -48,73 +48,90 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Palette lifted from jeetcreates.cc: warm cream / near-black bases with a
+   periwinkle-indigo accent. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #f2f1ed;
+  --foreground: #17171a;
+  --card: #fbfaf7;
+  --card-foreground: #17171a;
+  --popover: #fbfaf7;
+  --popover-foreground: #17171a;
+  --primary: #3b5bdb;
+  --primary-foreground: #fbfaf7;
+  --secondary: #e8e6df;
+  --secondary-foreground: #17171a;
+  --muted: #e8e6df;
+  --muted-foreground: #6f6e66;
+  --accent: #e3e1f7;
+  --accent-foreground: #17171a;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --border: #17171a1a;
+  --input: #17171a1f;
+  --ring: #3b5bdb80;
+  --chart-1: #3b5bdb;
+  --chart-2: #14b8a6;
+  --chart-3: #f97316;
+  --chart-4: #a855f7;
+  --chart-5: #ec4899;
+  --radius: 0.75rem;
+  --sidebar: #f2f1ed;
+  --sidebar-foreground: #17171a;
+  --sidebar-primary: #3b5bdb;
+  --sidebar-primary-foreground: #fbfaf7;
+  --sidebar-accent: #e3e1f7;
+  --sidebar-accent-foreground: #17171a;
+  --sidebar-border: #17171a1a;
+  --sidebar-ring: #3b5bdb80;
+
+  /* Liquid-glass tokens, sampled from jeetcreates.cc's buttons/pills */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(23, 23, 26, 0.08);
+  --glass-shadow: 0 1px 3px rgba(23, 23, 26, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --grain-dot: rgba(23, 23, 26, 0.5);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #111113;
+  --foreground: #f2f1ed;
+  --card: #1a1a1d;
+  --card-foreground: #f2f1ed;
+  --popover: #1a1a1d;
+  --popover-foreground: #f2f1ed;
+  --primary: #7c93f2;
+  --primary-foreground: #111113;
+  --secondary: #232326;
+  --secondary-foreground: #f2f1ed;
+  --muted: #232326;
+  --muted-foreground: #a8a8a2;
+  --accent: #2a2a3a;
+  --accent-foreground: #f2f1ed;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: #ffffff1c;
+  --input: #ffffff26;
+  --ring: #7c93f280;
+  --chart-1: #7c93f2;
+  --chart-2: #2dd4bf;
+  --chart-3: #fb923c;
+  --chart-4: #c084fc;
+  --chart-5: #f472b6;
+  --sidebar: #111113;
+  --sidebar-foreground: #f2f1ed;
+  --sidebar-primary: #7c93f2;
+  --sidebar-primary-foreground: #111113;
+  --sidebar-accent: #2a2a3a;
+  --sidebar-accent-foreground: #f2f1ed;
+  --sidebar-border: #ffffff1c;
+  --sidebar-ring: #7c93f280;
+
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-bg-strong: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --grain-dot: rgba(255, 255, 255, 0.4);
 }
 
 @layer base {
@@ -127,6 +144,66 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ---------------------------------------------------------------------
+   Liquid glass — macOS-style frosted panels and pills, matching the
+   backdrop-filter recipe measured off jeetcreates.cc's buttons/tags.
+   --------------------------------------------------------------------- */
+.glass-panel {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: var(--glass-shadow);
+}
+.glass-pill {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px) saturate(1.6);
+  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  box-shadow: var(--glass-shadow);
+  border-radius: 9999px;
+}
+
+/* Vivid gradient accents (opt-in, used sparingly for empty states, type
+   badges, and other small accents — not full surfaces). */
+.gradient-mint {
+  background-image: linear-gradient(135deg, #6ee7b7, #14b8a6);
+}
+.gradient-lavender {
+  background-image: linear-gradient(135deg, #c084fc, #f472b6);
+}
+.gradient-peach {
+  background-image: linear-gradient(135deg, #fdba74, #fb7185);
+}
+.gradient-sage {
+  background-image: linear-gradient(135deg, #bef264, #4ade80);
+}
+
+/* Subtle dot-grain texture + ambient blurred color blobs, fixed behind
+   the whole app — the same ambient liquid feel as the portfolio's
+   background, kept faint so it never fights with content. */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.app-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, var(--grain-dot) 1px, transparent 0);
+  background-size: 24px 24px;
+  opacity: 0.35;
+}
+.app-backdrop-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.25;
 }
 
 /* react-masonry-css: library ships no CSS of its own, just the column

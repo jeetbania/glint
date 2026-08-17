@@ -10,10 +10,12 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, undefined);
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-muted/30 px-4">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border bg-background p-8 shadow-sm">
+    <div className="flex min-h-screen w-full items-center justify-center px-4">
+      <div className="glass-panel w-full max-w-sm space-y-6 rounded-2xl p-8">
         <div className="space-y-1 text-center">
-          <h1 className="text-xl font-semibold">mymind</h1>
+          <h1 className="font-heading text-2xl font-semibold tracking-heading">
+            Glint
+          </h1>
           <p className="text-sm text-muted-foreground">
             Enter the password to continue.
           </p>

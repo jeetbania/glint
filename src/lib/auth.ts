@@ -1,7 +1,7 @@
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
 
-const SESSION_COOKIE = "mymind_session";
+const SESSION_COOKIE = "glint_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 function getAuthSecretKey() {
@@ -22,7 +22,7 @@ export function verifyPassword(password: string): boolean {
 }
 
 export async function createSessionToken(): Promise<string> {
-  return new SignJWT({ sub: "mymind-user" })
+  return new SignJWT({ sub: "glint-user" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
