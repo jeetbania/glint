@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { isTauri } from "@/lib/is-tauri";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import { useCaptureIngest, asUrl } from "@/lib/use-capture-ingest";
+import { showLinkSaveToast } from "@/components/link-save-toast";
 
 type ClipboardCapture = { kind: "image" | "text"; data: string };
 
@@ -47,6 +48,14 @@ export function ClipboardWatchProvider() {
           toast("New screenshot copied", {
             description: "Save it to Glint?",
             duration: 8000,
+            icon: (
+              // eslint-disable-next-line @next/next/no-img-element -- data: URI thumbnail, not a Next-optimizable remote asset
+              <img
+                src={`data:image/png;base64,${data}`}
+                alt=""
+                className="size-8 rounded-md object-cover"
+              />
+            ),
             action: {
               label: "Save",
               onClick: () => void ingestImage(base64PngToFile(data)),
@@ -54,14 +63,18 @@ export function ClipboardWatchProvider() {
           });
         } else {
           const url = asUrl(data);
-          toast(url ? "New link copied" : "New text copied", {
-            description: data.length > 80 ? `${data.slice(0, 80)}…` : data,
-            duration: 8000,
-            action: {
-              label: "Save",
-              onClick: () => void ingestText(data),
-            },
-          });
+          if (url) {
+            showLinkSaveToast(url, () => void ingestText(data));
+          } else {
+            toast("New text copied", {
+              description: data.length > 80 ? `${data.slice(0, 80)}…` : data,
+              duration: 8000,
+              action: {
+                label: "Save",
+                onClick: () => void ingestText(data),
+              },
+            });
+          }
         }
       }).then((fn) => {
         if (cancelled) fn();

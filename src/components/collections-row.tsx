@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
-import { animate } from "motion";
-import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
@@ -33,34 +31,23 @@ type CollectionPreview = {
   previews: string[];
 };
 
-// Spring timing + fan-out transforms — imperative animate() calls on
-// refs (not declarative whileHover props), matching jeetcreates.cc's own
-// Folder.tsx, since animating transform via CSS/Motion's declarative
-// path there left a visible glitch on first hover.
-const OPEN_SPRING = { type: "spring", stiffness: 260, damping: 22 } as const;
-const CLOSE_SPRING = { type: "spring", stiffness: 300, damping: 26 } as const;
-const REST = [
-  { x: -20, y: 8, rotate: -9 },
-  { x: 0, y: -2, rotate: 0 },
-  { x: 20, y: 8, rotate: 9 },
-];
-const OPEN_POS = [
-  { x: -34, y: -8, rotate: -15 },
-  { x: 0, y: -20, rotate: 0 },
-  { x: 34, y: -8, rotate: 15 },
-];
-
-// Colorful pastel glass, not plain gray — deterministic per collection
-// (hashed off its id, so a given folder keeps its color across reloads
-// and reorders) rather than user-picked, echoing jeetcreates.cc's
-// colorful project cards translated into glass instead of solid fills.
-const TINTS = ["mint", "lavender", "peach", "sky", "rose", "sage"] as const;
-function tintFor(id: string): (typeof TINTS)[number] {
+// Card design ported from the user's own Paper mockup — a fixed dark
+// frame (#2A2A2A body, #1C1C1C info panel) with only the top gradient
+// swatch varying between folders. The mockup hardcodes one oklab
+// gradient; we keep its exact lightness/chroma "recipe" (a muted, pale
+// wash, not a vivid saturated one) and rotate only the hue per folder,
+// derived deterministically from the collection id so a given folder's
+// color is stable across reloads and reorders.
+const HUES = [8, 48, 100, 165, 225, 280] as const;
+function hueFor(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = (hash * 31 + id.charCodeAt(i)) | 0;
   }
-  return TINTS[Math.abs(hash) % TINTS.length];
+  return HUES[Math.abs(hash) % HUES.length];
+}
+function swatchGradient(hue: number): string {
+  return `linear-gradient(180deg, oklch(76% 0.09 ${hue}) 0%, oklch(72% 0.09 ${hue}) 100%)`;
 }
 
 function FolderTile({
@@ -70,49 +57,11 @@ function FolderTile({
   collection: CollectionPreview;
   active: boolean;
 }) {
-  // Vivid, opaque gradients here — not .glass-tint-*, which is a
-  // low-alpha wash meant to sit over real page content behind it via
-  // backdrop-filter. This card's own background IS the base layer with
-  // nothing behind it, so that wash reads as near-black instead of
-  // colorful. The reference card is a solid saturated gradient, and
-  // .gradient-* (already used for item-type badges) is exactly that.
-  const tint = `gradient-${tintFor(collection.id)}`;
-  const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const hue = hueFor(collection.id);
   const { rename, remove } = useCollectionActions();
   const router = useRouter();
   const [isRenaming, setIsRenaming] = useState(false);
   const [draft, setDraft] = useState(collection.name);
-
-  // Prime Motion's own tracked transform state to match the REST values
-  // already painted via inline `style` below. Without this, Motion has
-  // no record of the element's current rotation on the very first
-  // animate() call (hover), so it doesn't know which way is "shorter" —
-  // it can end up spinning a card a full 360° instead of the intended
-  // few degrees. A zero-duration animate() on mount fixes that without
-  // any visible motion.
-  useEffect(() => {
-    imgRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const pos = REST[i] ?? REST[REST.length - 1];
-      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, { duration: 0 });
-    });
-  }, []);
-
-  function open() {
-    imgRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const pos = OPEN_POS[i] ?? OPEN_POS[OPEN_POS.length - 1];
-      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, OPEN_SPRING);
-    });
-  }
-
-  function close() {
-    imgRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const pos = REST[i] ?? REST[REST.length - 1];
-      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, CLOSE_SPRING);
-    });
-  }
 
   async function submitRename() {
     setIsRenaming(false);
@@ -157,9 +106,10 @@ function FolderTile({
             pointer-events-none by default so clicks fall through to it,
             except the couple of controls that opt back in explicitly. */}
         <div
-          onPointerEnter={open}
-          onPointerLeave={close}
-          className="group relative block size-52 shrink-0 overflow-hidden rounded-2xl [perspective:800px]"
+          className={cn(
+            "group relative size-60 shrink-0 overflow-hidden rounded-[22px] bg-[#2A2A2A] transition-transform duration-150 hover:scale-[1.02]",
+            active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+          )}
         >
           <Link
             href={isRenaming ? "#" : `/collections/${collection.slug}`}
@@ -168,73 +118,50 @@ function FolderTile({
             className="absolute inset-0 z-0"
           />
 
-          {/* Full-bleed tinted background — the square "folder" itself. */}
+          {/* Top swatch — hue rotates per folder, lightness/chroma fixed. */}
           <div
-            className={cn(
-              tint,
-              "pointer-events-none absolute inset-0 z-0 rounded-2xl",
-              active && "ring-2 ring-primary",
-            )}
+            aria-hidden
+            className="pointer-events-none absolute left-1.5 top-1.5 z-0 h-[110px] w-57 rounded-t-[15px]"
+            style={{ backgroundImage: swatchGradient(hue) }}
           />
 
-          {/* Fanned previews, peeking up from directly behind the label
-              bar — anchored to the bottom of the top ~62% zone so they
-              read as emerging from the folder's pocket, not floating. */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 bottom-[38%] z-[1] flex items-end justify-center pb-1">
-            {collection.previews.length > 0 ? (
-              collection.previews.slice(0, 3).map((src, i) => (
-                <div
-                  key={i}
-                  ref={(el) => {
-                    imgRefs.current[i] = el;
-                  }}
-                  className="absolute size-24 overflow-hidden rounded-xl border border-white/25 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.5)] will-change-transform"
-                  style={{
-                    transform: `translate(${REST[i]?.x ?? 0}px, ${REST[i]?.y ?? 0}px) rotate(${REST[i]?.rotate ?? 0}deg)`,
-                  }}
-                >
-                  <Image src={src} alt="" fill className="object-cover" unoptimized />
-                </div>
-              ))
+          {/* Info panel — deliberately overlaps the swatch's bottom edge
+              (top-24 vs. the swatch's own 6px+110px=116px reach) so it
+              reads as a flap sitting over a folder's pocket. */}
+          <div className="pointer-events-none absolute left-1.5 top-24 z-[1] flex h-34.5 w-57.25 flex-col justify-between rounded-[14px] bg-[#1C1C1C] px-3.5 py-2.5">
+            {isRenaming ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") submitRename();
+                  if (e.key === "Escape") {
+                    setDraft(collection.name);
+                    setIsRenaming(false);
+                  }
+                }}
+                onBlur={submitRename}
+                className="pointer-events-auto min-w-0 rounded bg-white/10 px-1 -mx-1 font-heading text-base font-medium tracking-heading text-white outline-none"
+              />
             ) : (
-              <Folder className="mb-2 size-8 text-white/70" />
+              <p className="truncate font-heading text-base font-medium tracking-heading text-white">
+                {collection.name}
+              </p>
             )}
-          </div>
 
-          {/* Label bar — dark glass, anchored to the card's bottom edge,
-              deliberately opaque-ish so it reads as a distinct "pocket"
-              the previews tuck behind, matching the reference card. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex flex-col gap-2.5 rounded-b-2xl bg-black/55 px-3.5 py-3 backdrop-blur-md">
-            <div className="flex items-start justify-between gap-2">
-              {isRenaming ? (
-                <input
-                  autoFocus
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.key === "Enter") submitRename();
-                    if (e.key === "Escape") {
-                      setDraft(collection.name);
-                      setIsRenaming(false);
-                    }
-                  }}
-                  onBlur={submitRename}
-                  className="pointer-events-auto min-w-0 flex-1 truncate rounded bg-white/10 px-1 -mx-1 font-heading text-sm font-semibold text-white outline-none"
-                />
-              ) : (
-                <p className="truncate font-heading text-sm font-semibold text-white">
-                  {collection.name}
-                </p>
-              )}
-
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] tracking-heading text-white/60">
+                {collection.count} {collection.count === 1 ? "save" : "saves"}
+              </p>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <button
                       type="button"
                       aria-label={`More options for ${collection.name}`}
-                      className="pointer-events-auto flex size-5 shrink-0 items-center justify-center rounded-full text-white/60 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 data-popup-open:opacity-100"
+                      className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded-full text-white/60 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
                 >
@@ -245,9 +172,6 @@ function FolderTile({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <p className="text-[11px] text-white/60">
-              {collection.count} {collection.count === 1 ? "save" : "saves"}
-            </p>
           </div>
         </div>
       </ContextMenuTrigger>
@@ -258,8 +182,8 @@ function FolderTile({
   );
 }
 
-/** Glass "folder" tiles for the reference app's Collections concept —
- * a lightweight, user-named grouping shown as a horizontal row above the
+/** "Folder" tiles for the reference app's Collections concept — a
+ * lightweight, user-named grouping shown as a horizontal row above the
  * Library grid. Clicking one opens its dedicated infinite-canvas space
  * (see /collections/[slug]), not an inline filter. */
 export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
@@ -297,7 +221,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
       ))}
 
       {creating ? (
-        <div className="glass-panel flex size-52 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl p-3">
+        <div className="glass-panel flex size-60 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
           <input
             autoFocus
             value={draft}
@@ -318,7 +242,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="glass-panel flex size-52 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl text-sm text-muted-foreground transition-all hover:brightness-105"
+          className="glass-panel flex size-60 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] text-sm text-muted-foreground transition-all hover:brightness-105"
         >
           <Plus className="size-5" />
           New collection

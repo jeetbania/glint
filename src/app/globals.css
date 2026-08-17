@@ -183,9 +183,14 @@ html[data-tauri-shell] [data-app-header] {
   padding-left: 4.5rem;
 }
 /* The item-detail lightbox is a full-viewport portal outside the app
-   shell, so it needs the same traffic-light clearance as the header. */
+   shell, so it needs the same traffic-light clearance as the header —
+   left clearance so the close button doesn't sit under the traffic
+   lights horizontally, AND extra top clearance (beyond the row's own
+   py-3) so it sits cleanly below them vertically too, rather than
+   assuming the row's default padding happens to line up. */
 html[data-tauri-shell] [data-item-detail-header] {
   padding-left: 4.5rem;
+  padding-top: 1.75rem;
 }
 
 /* ---------------------------------------------------------------------
@@ -203,10 +208,20 @@ html[data-tauri-shell] [data-item-detail-header] {
    beat a layered `.fixed { position: fixed }` regardless of source
    order, per the CSS cascade-layers spec, breaking any element that
    needs to combine glass styling with fixed/absolute positioning.
-   --------------------------------------------------------------------- */
+
+   Being in the SAME layer as Tailwind's own utilities isn't quite
+   enough on its own, though: within one layer, two rules of equal
+   specificity still fall back to source order, and this rule happens to
+   compile AFTER `.absolute`/`.fixed`/etc — so a `<Button variant="outline"
+   className="absolute ...">` (outline/secondary pull in .glass-pill)
+   silently lost its `position: absolute` to this rule's
+   `position: relative`, even though `.absolute` "should" have applied.
+   Wrapping the selector in :where(...) zeroes its specificity, so any
+   plain utility class always wins regardless of which was compiled
+   later — confirmed via the Settings dialog's close button, which
+   rendered inline instead of pinned top-right until this fix. */
 @layer utilities {
-  .glass-panel,
-  .glass-pill {
+  :where(.glass-panel, .glass-pill) {
     position: relative;
     isolation: isolate;
     overflow: hidden;
@@ -219,7 +234,7 @@ html[data-tauri-shell] [data-item-detail-header] {
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
     box-shadow: var(--glass-shadow);
   }
-  .glass-pill {
+  :where(.glass-pill) {
     background: var(--glass-bg);
     backdrop-filter: blur(12px) saturate(1.6);
     -webkit-backdrop-filter: blur(12px) saturate(1.6);
@@ -334,6 +349,31 @@ html[data-tauri-shell] [data-item-detail-header] {
   /* Minimal Tiptap content styling (no @tailwindcss/typography dependency) */
   .tiptap-content p {
     margin: 0.25rem 0;
+  }
+  .tiptap-content h1,
+  .tiptap-content h2,
+  .tiptap-content h3 {
+    font-family: var(--font-heading);
+    letter-spacing: var(--tracking-heading);
+    font-weight: 600;
+    margin: 1.25rem 0 0.25rem;
+  }
+  .tiptap-content h1:first-child,
+  .tiptap-content h2:first-child,
+  .tiptap-content h3:first-child {
+    margin-top: 0;
+  }
+  .tiptap-content h1 {
+    font-size: 1.5rem;
+  }
+  .tiptap-content h2 {
+    font-size: 1.25rem;
+  }
+  .tiptap-content h3 {
+    font-size: 1.0625rem;
+  }
+  .tiptap-content strong {
+    font-weight: 600;
   }
   .tiptap-content ul:not([data-type="taskList"]) {
     list-style: disc;

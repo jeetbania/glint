@@ -70,8 +70,44 @@ export function NotesView() {
 
   const selected = allNotes.find((n) => n.id === selectedId) ?? null;
 
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderDraft, setFolderDraft] = useState("");
+
   const refreshLibrary = () =>
     globalMutate((key) => typeof key === "string" && key.startsWith("/api/items"));
+
+  async function submitCreateFolder() {
+    const name = folderDraft.trim();
+    setCreatingFolder(false);
+    setFolderDraft("");
+    if (!name) return;
+    await fetch("/api/collections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    void globalMutate("/api/collections");
+  }
+
+  /** Drag a note from the list onto a folder in the sidebar to file it —
+   * adds to that folder's membership without removing any it's already
+   * in, mirroring how tags/collections already work as a many-to-many
+   * set rather than a single parent. */
+  async function fileNoteIntoFolder(noteId: string, folder: CollectionPreview) {
+    const note = allNotes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (note.collections.some((c) => c.slug === folder.slug)) return;
+    const names = [...note.collections.map((c) => c.name), folder.name];
+    await fetch(`/api/items/${noteId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collections: names }),
+    });
+    toast.success(`Moved to "${folder.name}"`);
+    mutateNotes();
+    refreshLibrary();
+    void globalMutate("/api/collections");
+  }
 
   async function createNote() {
     const res = await fetch("/api/items", {
@@ -99,7 +135,17 @@ export function NotesView() {
   return (
     <div className="flex h-full">
       <aside className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/60 px-3 py-4">
-        <p className="px-2 pb-2 text-xs font-medium text-muted-foreground">Folders</p>
+        <div className="flex items-center justify-between px-2 pb-2">
+          <p className="text-xs font-medium text-muted-foreground">Folders</p>
+          <button
+            type="button"
+            onClick={() => setCreatingFolder(true)}
+            aria-label="New folder"
+            className="flex size-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
         <FolderRow
           label="All Notes"
           icon={StickyNote}
@@ -117,8 +163,26 @@ export function NotesView() {
             onClick={() => setFolderSlug(c.slug)}
             collection={c}
             onDeleted={() => folderSlug === c.slug && setFolderSlug(null)}
+            onDropNote={(noteId) => fileNoteIntoFolder(noteId, c)}
           />
         ))}
+        {creatingFolder && (
+          <input
+            autoFocus
+            value={folderDraft}
+            onChange={(e) => setFolderDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitCreateFolder();
+              if (e.key === "Escape") {
+                setCreatingFolder(false);
+                setFolderDraft("");
+              }
+            }}
+            onBlur={submitCreateFolder}
+            placeholder="Folder name"
+            className="rounded-lg bg-foreground/8 px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+          />
+        )}
       </aside>
 
       <div className="flex w-80 shrink-0 flex-col border-r border-border/60">
@@ -227,9 +291,14 @@ function NoteRow({
     <ContextMenu>
       <ContextMenuTrigger>
         <button
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", note.id);
+            e.dataTransfer.effectAllowed = "move";
+          }}
           onClick={onSelect}
           className={cn(
-            "block w-full border-b border-border/40 px-4 py-2.5 text-left transition-colors",
+            "block w-full cursor-grab border-b border-border/40 px-4 py-2.5 text-left transition-colors active:cursor-grabbing",
             active ? "bg-foreground/8" : "hover:bg-foreground/4",
           )}
         >
@@ -261,6 +330,7 @@ function FolderRow({
   onClick,
   collection,
   onDeleted,
+  onDropNote,
 }: {
   label: string;
   icon: typeof Folder;
@@ -271,10 +341,12 @@ function FolderRow({
    * renamed or deleted — its absence turns off the context menu. */
   collection?: { id: string; name: string; slug: string };
   onDeleted?: () => void;
+  onDropNote?: (noteId: string) => void;
 }) {
   const { rename, remove } = useCollectionActions();
   const [isRenaming, setIsRenaming] = useState(false);
   const [draft, setDraft] = useState(label);
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   async function submitRename() {
     setIsRenaming(false);
@@ -289,9 +361,24 @@ function FolderRow({
   const row = (
     <button
       onClick={onClick}
+      onDragOver={(e) => {
+        if (!onDropNote) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDragEnter={() => onDropNote && setIsDropTarget(true)}
+      onDragLeave={() => setIsDropTarget(false)}
+      onDrop={(e) => {
+        if (!onDropNote) return;
+        e.preventDefault();
+        setIsDropTarget(false);
+        const noteId = e.dataTransfer.getData("text/plain");
+        if (noteId) onDropNote(noteId);
+      }}
       className={cn(
         "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
         active ? "bg-foreground/8 font-medium" : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground",
+        isDropTarget && "bg-primary/10 ring-2 ring-primary",
       )}
     >
       <Icon className="size-3.5 shrink-0" />
