@@ -33,14 +33,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Link
               href="/library"
-              className="flex items-center gap-2 font-heading text-sm font-semibold tracking-heading"
+              className="flex items-center gap-2.5 font-heading text-lg font-semibold tracking-heading"
             >
               <Image
                 src="/logo.png"
                 alt=""
-                width={22}
-                height={22}
-                className="rounded-[6px]"
+                width={32}
+                height={32}
+                className="rounded-[8px]"
                 priority
               />
               Glint

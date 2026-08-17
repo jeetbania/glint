@@ -86,15 +86,17 @@ function FolderTile({ collection, active }: { collection: CollectionPreview; act
       href={`/collections/${collection.slug}`}
       onPointerEnter={open}
       onPointerLeave={close}
-      className="group relative h-32 w-48 shrink-0 [perspective:800px]"
+      className="group relative h-40 w-52 shrink-0 [perspective:800px]"
     >
       {/* Card: pastel glass, anchored to the bottom — leaves room above
           for the fanned previews to peek out over its top edge, like the
-          jeetcreates.cc project cards this is modeled on. */}
+          jeetcreates.cc project cards this is modeled on. Tall enough
+          that the previews only overlap its own top sliver, never the
+          name/count text anchored at its bottom. */}
       <div
         className={cn(
           tint,
-          "absolute inset-x-0 bottom-0 flex h-24 flex-col justify-end overflow-hidden rounded-2xl p-3",
+          "absolute inset-x-0 bottom-0 flex h-28 flex-col justify-end overflow-hidden rounded-2xl p-3",
           active && "ring-2 ring-primary",
         )}
       >
@@ -105,7 +107,7 @@ function FolderTile({ collection, active }: { collection: CollectionPreview; act
       </div>
 
       {/* Fanned previews, peeking above the card's top edge. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex h-20 items-center justify-center">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex h-24 items-center justify-center">
         {collection.previews.length > 0 ? (
           collection.previews.slice(0, 3).map((src, i) => (
             <div
@@ -168,7 +170,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
       ))}
 
       {creating ? (
-        <div className="glass-panel flex h-24 w-48 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl p-3">
+        <div className="glass-panel flex h-40 w-52 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl p-3">
           <input
             autoFocus
             value={draft}
@@ -189,7 +191,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="glass-panel flex h-24 w-48 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl text-sm text-muted-foreground transition-all hover:brightness-105"
+          className="glass-panel flex h-40 w-52 shrink-0 flex-col items-center justify-center gap-2 rounded-2xl text-sm text-muted-foreground transition-all hover:brightness-105"
         >
           <Plus className="size-5" />
           New collection

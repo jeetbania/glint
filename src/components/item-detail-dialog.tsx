@@ -201,9 +201,7 @@ function ItemDetailContent({
         </div>
 
         <aside className="glass-panel hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
-          <div className="flex justify-end">
-            <TiltThumbnail item={item} />
-          </div>
+          <TiltThumbnail item={item} />
 
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Name</p>
@@ -301,21 +299,23 @@ function TiltThumbnail({ item }: { item: ApiItem }) {
   const src = item.blobUrl ?? item.previewImageUrl;
   if (!src) return null;
 
+  const ratio = item.width && item.height ? item.width / item.height : 1;
+
   function onMove(e: React.MouseEvent) {
     const rect = ref.current!.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width;
     const py = (e.clientY - rect.top) / rect.height;
-    setTilt({ rx: (0.5 - py) * 22, ry: (px - 0.5) * 22 });
+    setTilt({ rx: (0.5 - py) * 16, ry: (px - 0.5) * 16 });
   }
 
   return (
-    <div className="[perspective:600px]">
+    <div className="w-full shrink-0 [perspective:800px]">
       <div
         ref={ref}
         onMouseMove={onMove}
         onMouseLeave={() => setTilt({ rx: 0, ry: 0 })}
-        className="shimmer-sweep relative size-32 shrink-0 overflow-hidden rounded-xl shadow-[0_8px_20px_-6px_rgba(0,0,0,0.5)] transition-transform duration-150 ease-out will-change-transform"
-        style={{ transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)` }}
+        className="shimmer-sweep relative max-h-64 w-full overflow-hidden rounded-2xl shadow-[0_8px_20px_-6px_rgba(0,0,0,0.5)] transition-transform duration-150 ease-out will-change-transform"
+        style={{ aspectRatio: ratio, transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)` }}
       >
         <Image src={src} alt="" fill className="object-cover" unoptimized />
       </div>
