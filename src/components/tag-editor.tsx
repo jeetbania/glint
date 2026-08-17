@@ -28,7 +28,7 @@ export function TagEditor({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {tags.map((tag) => (
-        <Badge key={tag} variant="secondary" className="gap-1 pr-1">
+        <Badge key={tag} variant="secondary" className="h-7 gap-1 px-2.5 pr-1.5 text-sm">
           {tag}
           <button
             type="button"
@@ -51,7 +51,7 @@ export function TagEditor({
         }}
         onBlur={addTag}
         placeholder="Add tag…"
-        className="h-7 w-28 border-dashed text-xs"
+        className="h-7 w-28 border-dashed text-sm"
       />
     </div>
   );

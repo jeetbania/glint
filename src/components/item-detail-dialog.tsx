@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { TagEditor } from "@/components/tag-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
-import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
 
@@ -161,7 +160,7 @@ function ItemDetailContent({
 
       <div
         data-item-detail-header
-        className="relative z-10 flex shrink-0 items-center justify-between px-6 py-5"
+        className="relative z-10 flex shrink-0 items-center justify-between px-6 py-3"
       >
         <DialogPrimitive.Close render={<Button variant="outline" size="icon-sm" />}>
           <X className="size-4" />
@@ -315,7 +314,7 @@ function TiltThumbnail({ item }: { item: ApiItem }) {
         ref={ref}
         onMouseMove={onMove}
         onMouseLeave={() => setTilt({ rx: 0, ry: 0 })}
-        className="shimmer-sweep relative size-20 shrink-0 overflow-hidden rounded-xl shadow-[0_8px_20px_-6px_rgba(0,0,0,0.5)] transition-transform duration-150 ease-out will-change-transform"
+        className="shimmer-sweep relative size-32 shrink-0 overflow-hidden rounded-xl shadow-[0_8px_20px_-6px_rgba(0,0,0,0.5)] transition-transform duration-150 ease-out will-change-transform"
         style={{ transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)` }}
       >
         <Image src={src} alt="" fill className="object-cover" unoptimized />
@@ -334,19 +333,26 @@ function MainVisual({
   onNoteUpdate: (payload: { json: JSONContent; text: string }) => void;
 }) {
   if (item.type === "image" && item.blobUrl) {
+    // `fill` + an explicit aspect-ratio on this wrapper (rather than
+    // intrinsic width/height + max-* constraints directly on the <img>)
+    // sizes the box itself to the image's real aspect ratio. The
+    // previous approach left the <img>'s own layout box stretched to
+    // its flex container's full size — object-contain only shrinks the
+    // *painted pixels* within a box, not the box itself — so the
+    // invisible remainder of that box silently ate clicks meant to
+    // close the dialog (target === flex-1 container never matched).
+    const ratio = item.width && item.height ? item.width / item.height : 4 / 3;
     return (
       <div
-        className="max-h-full max-w-full transition-transform duration-150 ease-out"
-        style={{ transform: `scale(${zoom})` }}
+        className="relative max-h-[calc(100vh-11rem)] max-w-full transition-transform duration-150 ease-out"
+        style={{ aspectRatio: ratio, height: "100%", width: "auto", transform: `scale(${zoom})` }}
       >
         <Image
           src={item.blobUrl}
           alt={item.title ?? "Saved image"}
-          width={item.width ?? 1200}
-          height={item.height ?? 900}
-          className={cn(
-            "max-h-[calc(100vh-11rem)] max-w-full rounded-lg object-contain shadow-2xl",
-          )}
+          fill
+          sizes="80vw"
+          className="rounded-lg object-contain shadow-2xl"
           unoptimized
         />
       </div>
