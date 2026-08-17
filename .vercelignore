@@ -1,0 +1,8 @@
+# The Tauri desktop shell's Rust build output — multi-GB of compiled
+# artifacts, entirely irrelevant to the Vercel web deployment. This is
+# already covered by src-tauri/.gitignore, but Vercel's own upload
+# scanner doesn't appear to honor nested .gitignore files, so it needs
+# to be listed explicitly here too (this caused a "File size limit
+# exceeded (100 MB)" deploy failure after uploading ~2.9GB).
+src-tauri/target
+src-tauri/gen
