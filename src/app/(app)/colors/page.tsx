@@ -1,0 +1,39 @@
+import Link from "next/link";
+import { Palette } from "lucide-react";
+import { listColorFamilyCounts } from "@/lib/items";
+import { swatchHex } from "@/lib/color";
+
+export default async function ColorsPage() {
+  const colors = await listColorFamilyCounts();
+
+  if (colors.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+        <Palette className="size-6" />
+        No colors extracted yet. Paste an image to see its palette here.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      <h1 className="mb-4 text-lg font-semibold">Colors</h1>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {colors.map((c) => (
+          <Link
+            key={c.color}
+            href={`/library?color=${c.color}`}
+            className="flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors hover:bg-muted/50"
+          >
+            <span
+              className="size-10 rounded-full border"
+              style={{ backgroundColor: swatchHex(c.color) }}
+            />
+            <span className="text-sm font-medium capitalize">{c.color}</span>
+            <span className="text-xs text-muted-foreground">{c.count}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}

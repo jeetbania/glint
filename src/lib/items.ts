@@ -1,0 +1,191 @@
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { getDb } from "@/db";
+import {
+  items,
+  itemTags,
+  tags,
+  type ItemType,
+  type ItemStatus,
+} from "@/db/schema";
+import { slugify } from "@/lib/slug";
+
+export type ItemWithTags = typeof items.$inferSelect & {
+  tags: { id: string; name: string; slug: string; color: string | null }[];
+};
+
+export type ListItemsFilters = {
+  type?: ItemType;
+  status?: ItemStatus;
+  tagSlug?: string;
+  color?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+/** Attach tags to a list of items in one bulk query instead of N+1. */
+async function attachTags(
+  rows: (typeof items.$inferSelect)[],
+): Promise<ItemWithTags[]> {
+  if (rows.length === 0) return [];
+  const db = getDb();
+  const ids = rows.map((r) => r.id);
+  const tagRows = await db
+    .select({
+      itemId: itemTags.itemId,
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      color: tags.color,
+    })
+    .from(itemTags)
+    .innerJoin(tags, eq(itemTags.tagId, tags.id))
+    .where(inArray(itemTags.itemId, ids));
+
+  const byItem = new Map<string, ItemWithTags["tags"]>();
+  for (const t of tagRows) {
+    const list = byItem.get(t.itemId) ?? [];
+    list.push({ id: t.id, name: t.name, slug: t.slug, color: t.color });
+    byItem.set(t.itemId, list);
+  }
+
+  return rows.map((row) => ({ ...row, tags: byItem.get(row.id) ?? [] }));
+}
+
+export async function listItems(
+  filters: ListItemsFilters = {},
+): Promise<ItemWithTags[]> {
+  const db = getDb();
+  const conditions: SQL[] = [
+    eq(items.status, filters.status ?? "active"),
+  ];
+
+  if (filters.type) conditions.push(eq(items.type, filters.type));
+  if (filters.color) {
+    conditions.push(sql`${filters.color} = ANY(${items.colorFamily})`);
+  }
+  if (filters.q && filters.q.trim()) {
+    conditions.push(
+      sql`${items.searchVector} @@ plainto_tsquery('english', ${filters.q.trim()})`,
+    );
+  }
+  if (filters.tagSlug) {
+    conditions.push(
+      sql`${items.id} IN (
+        SELECT ${itemTags.itemId} FROM ${itemTags}
+        INNER JOIN ${tags} ON ${tags.id} = ${itemTags.tagId}
+        WHERE ${tags.slug} = ${filters.tagSlug}
+      )`,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(items)
+    .where(and(...conditions))
+    .orderBy(desc(items.createdAt))
+    .limit(filters.limit ?? 200)
+    .offset(filters.offset ?? 0);
+
+  return attachTags(rows);
+}
+
+export async function getItem(id: string): Promise<ItemWithTags | null> {
+  const db = getDb();
+  const [row] = await db.select().from(items).where(eq(items.id, id)).limit(1);
+  if (!row) return null;
+  const [withTags] = await attachTags([row]);
+  return withTags;
+}
+
+export async function createItem(
+  data: Partial<typeof items.$inferInsert> & { type: ItemType },
+): Promise<typeof items.$inferSelect> {
+  const db = getDb();
+  const [row] = await db.insert(items).values(data).returning();
+  return row;
+}
+
+export async function updateItem(
+  id: string,
+  data: Partial<typeof items.$inferInsert>,
+): Promise<typeof items.$inferSelect | null> {
+  const db = getDb();
+  const [row] = await db
+    .update(items)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(items.id, id))
+    .returning();
+  return row ?? null;
+}
+
+export async function deleteItem(id: string): Promise<void> {
+  const db = getDb();
+  // Soft delete keeps color/tag stats and search history recoverable;
+  // hard delete of the row cascades item_tags/item_positions/kanban_cards.
+  await db.update(items).set({ status: "trashed" }).where(eq(items.id, id));
+}
+
+/** Get-or-create tags by name and replace an item's tag set with them. */
+export async function setItemTags(
+  itemId: string,
+  tagNames: string[],
+): Promise<void> {
+  const db = getDb();
+  const cleaned = [...new Set(tagNames.map((t) => t.trim()).filter(Boolean))];
+
+  const tagIds: string[] = [];
+  for (const name of cleaned) {
+    const slug = slugify(name);
+    if (!slug) continue;
+    const [existing] = await db
+      .select()
+      .from(tags)
+      .where(eq(tags.slug, slug))
+      .limit(1);
+    if (existing) {
+      tagIds.push(existing.id);
+    } else {
+      const [created] = await db
+        .insert(tags)
+        .values({ name, slug })
+        .returning();
+      tagIds.push(created.id);
+    }
+  }
+
+  await db.delete(itemTags).where(eq(itemTags.itemId, itemId));
+  if (tagIds.length > 0) {
+    await db
+      .insert(itemTags)
+      .values(tagIds.map((tagId) => ({ itemId, tagId })));
+  }
+}
+
+export async function listTagsWithCounts() {
+  const db = getDb();
+  return db
+    .select({
+      id: tags.id,
+      name: tags.name,
+      slug: tags.slug,
+      color: tags.color,
+      count: sql<number>`count(${itemTags.itemId})::int`,
+    })
+    .from(tags)
+    .leftJoin(itemTags, eq(itemTags.tagId, tags.id))
+    .groupBy(tags.id)
+    .orderBy(desc(sql`count(${itemTags.itemId})`));
+}
+
+export async function listColorFamilyCounts() {
+  const db = getDb();
+  const rows = await db.execute<{ color: string; count: number }>(sql`
+    SELECT unnest(color_family) AS color, count(*)::int AS count
+    FROM items
+    WHERE status = 'active'
+    GROUP BY color
+    ORDER BY count DESC
+  `);
+  return rows.rows;
+}
