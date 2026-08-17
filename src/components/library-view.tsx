@@ -15,42 +15,46 @@ import {
 import { ItemCard } from "@/components/item-card";
 import { ItemDetailDialog } from "@/components/item-detail-dialog";
 import { CollectionsRow } from "@/components/collections-row";
+import { FilterMenu } from "@/components/filter-menu";
+import { SortMenu, type SortValue } from "@/components/sort-menu";
+import { SizeSlider } from "@/components/size-slider";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
-import { swatchHex } from "@/lib/color";
 import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
 
-const TYPE_FILTERS: { value: ItemType | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "image", label: "Images" },
-  { value: "link", label: "Links" },
-  { value: "note", label: "Notes" },
-  { value: "task", label: "Tasks" },
+/** The main Library view is visuals-only by default (images + links) —
+ * Notes and Tasks live under their own dedicated tabs instead of
+ * cluttering the primary grid. */
+const VISUAL_TYPE_FILTERS: { value: string; label: string; types?: ItemType[] }[] = [
+  { value: "all", label: "All", types: ["image", "link"] },
+  { value: "image", label: "Images", types: ["image"] },
+  { value: "link", label: "Links", types: ["link"] },
 ];
 
-const MASONRY_BREAKPOINTS = { default: 4, 1280: 3, 900: 2, 600: 1 };
+const DEFAULT_COLUMNS = 4;
 
 export function LibraryView({
   fixedType,
   initialTag = null,
   initialColor = null,
-  initialCollection = null,
   showCollections = false,
+  showTypeFilters = true,
   emptyMessage = "Nothing here yet. Paste an image or link anywhere to save it.",
 }: {
   fixedType?: ItemType;
   initialTag?: string | null;
   initialColor?: string | null;
-  initialCollection?: string | null;
   showCollections?: boolean;
+  showTypeFilters?: boolean;
   emptyMessage?: string;
 }) {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [type, setType] = useState<ItemType | "all">(fixedType ?? "all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [tag, setTag] = useState<string | null>(initialTag);
   const [color, setColor] = useState<string | null>(initialColor);
-  const [collection, setCollection] = useState<string | null>(initialCollection);
+  const [sort, setSort] = useState<SortValue>("recent-desc");
+  const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const { mutate: globalMutate } = useSWRConfig();
 
@@ -75,40 +79,34 @@ export function LibraryView({
     setDebouncedSearch(value);
   }, 300);
 
-  const effectiveType = fixedType ?? type;
   const queryKey = useMemo(() => {
+    const effectiveTypes = fixedType
+      ? [fixedType]
+      : VISUAL_TYPE_FILTERS.find((f) => f.value === typeFilter)?.types;
     const params = new URLSearchParams();
-    if (effectiveType !== "all") params.set("type", effectiveType);
+    if (effectiveTypes) params.set("type", effectiveTypes.join(","));
     if (tag) params.set("tag", tag);
     if (color) params.set("color", color);
-    if (collection) params.set("collection", collection);
+    if (sort !== "recent-desc") params.set("sort", sort);
     if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
     return `/api/items?${params.toString()}`;
-  }, [effectiveType, tag, color, collection, debouncedSearch]);
+  }, [fixedType, typeFilter, tag, color, sort, debouncedSearch]);
 
   const { data, isLoading } = useSWR<{ items: ApiItem[] }>(queryKey);
-  const { data: tagsData } = useSWR<{
-    tags: { id: string; name: string; slug: string; count: number }[];
-  }>("/api/tags");
-  const { data: colorsData } = useSWR<{
-    colors: { color: string; count: number }[];
-  }>("/api/colors");
 
   const items = data?.items ?? [];
+  const breakpoints = {
+    default: columns,
+    1400: Math.max(columns - 1, 2),
+    1000: Math.max(columns - 2, 1),
+    640: 1,
+  };
 
   return (
     <div className="flex h-full flex-col">
-      {showCollections && <CollectionsRow activeSlug={collection} />}
-      <div className="space-y-4 px-6 pb-4 pt-6">
-        {collection && (
-          <button
-            onClick={() => setCollection(null)}
-            className="text-xs text-muted-foreground underline underline-offset-2"
-          >
-            Clear collection filter
-          </button>
-        )}
-        <div className="flex items-center gap-4">
+      {showCollections && <CollectionsRow />}
+      <div className="space-y-3 px-6 pb-4 pt-6">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-xs flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -121,98 +119,65 @@ export function LibraryView({
               className="pl-9"
             />
           </div>
-          {!fixedType && (
+          {!fixedType && showTypeFilters && (
             <div className="flex items-center gap-5">
-              {TYPE_FILTERS.map((f) => (
+              {VISUAL_TYPE_FILTERS.map((f) => (
                 <button
                   key={f.value}
-                  onClick={() => setType(f.value)}
+                  onClick={() => setTypeFilter(f.value)}
                   className={cn(
                     "relative pb-1 text-sm font-medium transition-colors",
-                    type === f.value
+                    typeFilter === f.value
                       ? "text-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {f.label}
-                  {type === f.value && (
+                  {typeFilter === f.value && (
                     <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
                   )}
                 </button>
               ))}
             </div>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button size="sm" variant="outline" className="ml-auto gap-1.5">
-                  <Plus className="size-4" />
-                  New
-                </Button>
-              }
+
+          <div className="ml-auto flex items-center gap-2">
+            <FilterMenu
+              color={color}
+              onColorChange={setColor}
+              tag={tag}
+              onTagChange={setTag}
             />
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => createBlank("note")}>
-                <StickyNote className="size-4" />
-                Note
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => createBlank("task")}>
-                <CheckSquare className="size-4" />
-                Task
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {colorsData && colorsData.colors.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {colorsData.colors.map((c) => (
-              <button
-                key={c.color}
-                onClick={() =>
-                  setColor((current) => (current === c.color ? null : c.color))
+            <SortMenu value={sort} onChange={setSort} />
+            <SizeSlider columns={columns} onChange={setColumns} />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="sm" variant="outline" className="gap-1.5">
+                    <Plus className="size-4" />
+                    New
+                  </Button>
                 }
-                title={`${c.color} (${c.count})`}
-                className={cn(
-                  "size-5 rounded-full border-2 transition-transform",
-                  color === c.color
-                    ? "scale-110 border-foreground"
-                    : "border-transparent",
-                )}
-                style={{ backgroundColor: swatchHex(c.color) }}
               />
-            ))}
-            {color && (
-              <button
-                onClick={() => setColor(null)}
-                className="text-xs text-muted-foreground underline underline-offset-2"
-              >
-                clear
-              </button>
-            )}
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => createBlank("note")}>
+                  <StickyNote className="size-4" />
+                  Note
+                  <kbd className="ml-auto text-[10px] text-muted-foreground">
+                    ⌘⇧N
+                  </kbd>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => createBlank("task")}>
+                  <CheckSquare className="size-4" />
+                  Task
+                  <kbd className="ml-auto text-[10px] text-muted-foreground">
+                    ⌘⇧T
+                  </kbd>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
-
-        {tagsData && tagsData.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {tagsData.tags.map((t) => (
-              <button
-                key={t.id}
-                onClick={() =>
-                  setTag((current) => (current === t.slug ? null : t.slug))
-                }
-                className={cn(
-                  "rounded-full px-2.5 py-0.5 text-xs transition-all",
-                  tag === t.slug
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-foreground/6 text-muted-foreground hover:bg-foreground/10",
-                )}
-              >
-                {t.name} · {t.count}
-              </button>
-            ))}
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="flex-1 px-6 pb-6">
@@ -222,7 +187,7 @@ export function LibraryView({
           </div>
         )}
         <Masonry
-          breakpointCols={MASONRY_BREAKPOINTS}
+          breakpointCols={breakpoints}
           className="masonry-grid"
           columnClassName="masonry-grid-column"
         >

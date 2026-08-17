@@ -85,9 +85,13 @@
   --sidebar-border: #17171a1a;
   --sidebar-ring: #3b5bdb80;
 
-  /* Liquid-glass tokens, sampled from jeetcreates.cc's buttons/pills */
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  /* Liquid-glass tokens, sampled from jeetcreates.cc's buttons/pills.
+     Two tiers: --glass-bg (small accents — buttons, pills, badges) stays
+     translucent; --glass-bg-strong (structural surfaces — the app shell,
+     dialogs, cards) is mostly-opaque so large surfaces read as grounded
+     native panels, not see-through glass everywhere. */
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-bg-strong: rgba(251, 250, 247, 0.9);
   --glass-border: rgba(23, 23, 26, 0.08);
   --glass-shadow: 0 8px 24px rgba(23, 23, 26, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
@@ -133,8 +137,8 @@
   --sidebar-border: #ffffff14;
   --sidebar-ring: #7c93f280;
 
-  --glass-bg: rgba(255, 255, 255, 0.055);
-  --glass-bg-strong: rgba(255, 255, 255, 0.075);
+  --glass-bg: rgba(255, 255, 255, 0.09);
+  --glass-bg-strong: rgba(19, 19, 21, 0.88);
   --glass-border: rgba(255, 255, 255, 0.12);
   --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -167,10 +171,12 @@
 html[data-tauri-shell] body {
   background: transparent;
 }
-html[data-tauri-shell] [data-app-shell] {
-  background: transparent;
-}
 html[data-tauri-shell] [data-app-header] {
+  padding-left: 4.5rem;
+}
+/* The item-detail lightbox is a full-viewport portal outside the app
+   shell, so it needs the same traffic-light clearance as the header. */
+html[data-tauri-shell] [data-item-detail-header] {
   padding-left: 4.5rem;
 }
 
@@ -195,14 +201,17 @@ html[data-tauri-shell] [data-app-header] {
     overflow: hidden;
     background: var(--glass-bg-strong);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(28px) saturate(1.7);
-    -webkit-backdrop-filter: blur(28px) saturate(1.7);
+    /* Mostly-opaque now (see --glass-bg-strong), so a lighter blur still
+       reads as "glass" without paying for a heavy blur pass on every
+       structural surface — cheaper to composite, same visual cue. */
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
     box-shadow: var(--glass-shadow);
   }
   .glass-pill {
     background: var(--glass-bg);
-    backdrop-filter: blur(16px) saturate(1.7);
-    -webkit-backdrop-filter: blur(16px) saturate(1.7);
+    backdrop-filter: blur(14px) saturate(1.6);
+    -webkit-backdrop-filter: blur(14px) saturate(1.6);
     border-radius: 9999px;
   }
   .glass-panel::before,
@@ -277,5 +286,46 @@ html[data-tauri-shell] [data-app-header] {
   }
   .tiptap-content ul[data-type="taskList"] li > div {
     flex: 1;
+  }
+
+  /* Looping shimmer sweep for the item-detail thumbnail — a soft
+     diagonal band that crosses the card every few seconds so the panel
+     reads as alive even before the user's cursor reaches it. */
+  .shimmer-sweep {
+    isolation: isolate;
+  }
+  .shimmer-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      115deg,
+      transparent 40%,
+      rgba(255, 255, 255, 0.55) 50%,
+      transparent 60%
+    );
+    transform: translateX(-120%) skewX(-20deg);
+    animation: shimmer-sweep 4.5s ease-in-out infinite;
+  }
+}
+
+@keyframes shimmer-sweep {
+  0%,
+  65% {
+    transform: translateX(-120%) skewX(-20deg);
+    opacity: 0;
+  }
+  72% {
+    opacity: 0.7;
+  }
+  88% {
+    transform: translateX(120%) skewX(-20deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(120%) skewX(-20deg);
+    opacity: 0;
   }
 }

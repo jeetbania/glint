@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, PenTool, StickyNote, KanbanSquare } from "lucide-react";
+import { LayoutGrid, StickyNote, KanbanSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// "Boards" was removed as a top-level destination — a Collection now
+// opens its own infinite-canvas space directly (see
+// /collections/[slug]), which is what Boards used to stand in for.
 const navItems = [
   { href: "/library", label: "Library", icon: LayoutGrid },
-  { href: "/boards", label: "Boards", icon: PenTool },
   { href: "/notes", label: "Notes", icon: StickyNote },
   { href: "/tasks", label: "Tasks", icon: KanbanSquare },
 ];

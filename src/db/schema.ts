@@ -179,6 +179,17 @@ export const itemCollections = pgTable(
     collectionId: uuid("collection_id")
       .notNull()
       .references(() => collections.id, { onDelete: "cascade" }),
+    // Spatial placement on that collection's infinite canvas. Nullable —
+    // an item with no position yet falls back to an auto-arranged grid
+    // spot computed client-side; a value is only written once the user
+    // actually drags the card, same lazy-persistence idea as boards'
+    // item_positions but folded onto this join row instead of a second
+    // table, since a position here is meaningless outside its collection.
+    x: real("x"),
+    y: real("y"),
+    w: real("w"),
+    h: real("h"),
+    zIndex: integer("z_index").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

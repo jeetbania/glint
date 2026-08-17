@@ -20,7 +20,7 @@ export function ItemCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative block w-full overflow-hidden rounded-xl text-left shadow-[0_10px_30px_-8px_rgba(0,0,0,0.4)] transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative block w-full overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         !hasVisual && "glass-panel",
       )}
     >
@@ -32,18 +32,11 @@ export function ItemCard({
   );
 }
 
-function HoverScrim({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/75 via-black/10 to-transparent p-2.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-      {children}
-    </div>
-  );
-}
-
 /** Floating corner controls that appear on card hover, over image/preview
  * content — a selection affordance top-left and an explicit "expand"
  * hint bottom-right, both rendered as neutral glass circles so they read
- * against any image regardless of its own colors. */
+ * against any image regardless of its own colors. No bottom scrim — the
+ * hover state is communicated by lift + shadow only (see ItemCard). */
 function HoverControls({ showSelect = true }: { showSelect?: boolean }) {
   return (
     <>
@@ -87,8 +80,6 @@ function TypeIcon({
 function ImageCardBody({ item }: { item: ApiItem }) {
   const ratio =
     item.width && item.height ? item.width / item.height : 4 / 3;
-  const hasTags = item.tags.length > 0;
-  const hasColors = (item.dominantColors?.length ?? 0) > 0;
 
   return (
     <div className="relative w-full" style={{ aspectRatio: ratio }}>
@@ -97,35 +88,10 @@ function ImageCardBody({ item }: { item: ApiItem }) {
         alt={item.title ?? "Saved image"}
         fill
         sizes="(max-width: 768px) 50vw, 25vw"
-        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        className="object-cover"
         unoptimized
       />
       <HoverControls />
-      {(hasTags || hasColors) && (
-        <HoverScrim>
-          <div className="flex flex-wrap gap-1">
-            {item.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag.id}
-                className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm"
-              >
-                {tag.name}
-              </span>
-            ))}
-          </div>
-          {hasColors && (
-            <div className="flex shrink-0 gap-1">
-              {item.dominantColors!.slice(0, 4).map((c, i) => (
-                <span
-                  key={i}
-                  className="size-2.5 rounded-full ring-1 ring-white/60"
-                  style={{ backgroundColor: c.hex }}
-                />
-              ))}
-            </div>
-          )}
-        </HoverScrim>
-      )}
     </div>
   );
 }
@@ -139,7 +105,7 @@ function LinkCardBody({ item }: { item: ApiItem }) {
           alt=""
           fill
           sizes="(max-width: 768px) 50vw, 25vw"
-          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className="object-cover"
           unoptimized
         />
         <div className="absolute left-2 top-2 flex max-w-[80%] items-center gap-1.5 rounded-full bg-black/55 px-2 py-1 backdrop-blur-sm">
@@ -154,11 +120,6 @@ function LinkCardBody({ item }: { item: ApiItem }) {
           </span>
         </div>
         <HoverControls showSelect={false} />
-        <HoverScrim>
-          <p className="line-clamp-2 text-xs font-medium text-white">
-            {item.title ?? item.url}
-          </p>
-        </HoverScrim>
       </div>
     );
   }

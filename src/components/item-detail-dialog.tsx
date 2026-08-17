@@ -1,38 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { X, Trash2, ExternalLink, Link as LinkIcon } from "lucide-react";
+import {
+  X,
+  Trash2,
+  Download,
+  ExternalLink,
+  Link as LinkIcon,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TagEditor } from "@/components/tag-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
 
-/** Blends up to 3 of the item's dominant colors into offset radial
- * gradients — an Apple-TV-style ambient wash behind the lightbox content,
- * rather than one flat tinted circle. */
-function buildAmbientGlow(
-  colors: { hex: string; percentage: number }[] | null | undefined,
-): string | null {
-  if (!colors || colors.length === 0) return null;
-  const positions = [
-    "35% 25%",
-    "75% 65%",
-    "20% 80%",
-  ];
-  return colors
-    .slice(0, 3)
-    .map(
-      (c, i) =>
-        `radial-gradient(45% 45% at ${positions[i]}, ${c.hex}, transparent 70%)`,
-    )
-    .join(", ");
+/** Closes the dialog only when the click landed on the element the
+ * listener is attached to (not a descendant) — lets any genuinely empty
+ * stretch of backdrop close the lightbox without swallowing clicks on
+ * the image, header buttons, or the details panel. */
+function closeOnEmptyClick(onClose: () => void) {
+  return (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) onClose();
+  };
 }
 
 export function ItemDetailDialog({
@@ -50,7 +48,7 @@ export function ItemDetailDialog({
   return (
     <DialogPrimitive.Root open={!!itemId} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <DialogPrimitive.Popup className="fixed inset-0 z-50 outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
           {item ? (
             <ItemDetailContent
@@ -79,6 +77,7 @@ function ItemDetailContent({
   const { mutate: globalMutate } = useSWRConfig();
   const { mutate } = useSWR<{ item: ApiItem }>(`/api/items/${item.id}`);
   const [title, setTitle] = useState(item.title ?? "");
+  const [zoom, setZoom] = useState(1);
 
   const refreshLibrary = () =>
     globalMutate(
@@ -135,19 +134,35 @@ function ItemDetailContent({
     refreshLibrary();
   }
 
-  const glow = buildAmbientGlow(item.dominantColors);
+  const bgImage = item.blobUrl ?? item.previewImageUrl;
+  const downloadHref = item.blobUrl ?? item.previewImageUrl;
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
-      {glow && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-60 blur-[130px]"
-          style={{ backgroundImage: glow }}
-        />
+    <div
+      className="relative flex h-full w-full flex-col overflow-hidden bg-black"
+      onClick={closeOnEmptyClick(onClose)}
+    >
+      {/* Background is the image itself — zoomed, blurred, and darkened —
+          rather than a color-extraction glow, per the reference. */}
+      {bgImage ? (
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <Image
+            src={bgImage}
+            alt=""
+            fill
+            className="scale-110 object-cover opacity-50 blur-3xl"
+            unoptimized
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/60 to-black/80" />
+        </div>
+      ) : (
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-black" />
       )}
 
-      <div className="relative z-10 flex shrink-0 items-center justify-between px-5 py-4">
+      <div
+        data-item-detail-header
+        className="relative z-10 flex shrink-0 items-center justify-between px-6 py-5"
+      >
         <DialogPrimitive.Close render={<Button variant="outline" size="icon-sm" />}>
           <X className="size-4" />
           <span className="sr-only">Close</span>
@@ -155,35 +170,41 @@ function ItemDetailContent({
         <DialogPrimitive.Title className="sr-only">
           {item.title ?? item.type}
         </DialogPrimitive.Title>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={handleDelete}
-          className="text-destructive hover:text-destructive"
-          aria-label="Delete"
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {downloadHref && (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              render={<a href={downloadHref} download target="_blank" rel="noreferrer" />}
+              aria-label="Download"
+            >
+              <Download className="size-4" />
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onClick={handleDelete}
+            className="text-destructive hover:text-destructive"
+            aria-label="Delete"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </div>
 
-      <div className="relative z-10 flex min-h-0 flex-1 gap-4 px-5 pb-5">
-        <div className="flex min-w-0 flex-1 items-center justify-center overflow-hidden">
-          <MainVisual item={item} onNoteUpdate={saveNote} />
+      <div className="relative z-10 flex min-h-0 flex-1 gap-4 px-6 pb-6">
+        <div
+          className="flex min-w-0 flex-1 items-center justify-center overflow-hidden"
+          onClick={closeOnEmptyClick(onClose)}
+        >
+          <MainVisual item={item} zoom={zoom} onNoteUpdate={saveNote} />
         </div>
 
         <aside className="glass-panel hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
-          {item.dominantColors && item.dominantColors.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {item.dominantColors.map((c, i) => (
-                <span
-                  key={i}
-                  title={c.hex}
-                  className="size-6 rounded-full border border-white/10 shadow-sm"
-                  style={{ backgroundColor: c.hex }}
-                />
-              ))}
-            </div>
-          )}
+          <div className="flex justify-end">
+            <TiltThumbnail item={item} />
+          </div>
 
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Name</p>
@@ -213,6 +234,22 @@ function ItemDetailContent({
             </div>
           )}
 
+          {item.dominantColors && item.dominantColors.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Colors</p>
+              <div className="flex flex-wrap gap-1.5">
+                {item.dominantColors.map((c, i) => (
+                  <span
+                    key={i}
+                    title={c.hex}
+                    className="size-6 rounded-full border border-white/10 shadow-sm"
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">
               Collections
@@ -229,27 +266,90 @@ function ItemDetailContent({
           </div>
         </aside>
       </div>
+
+      {item.type === "image" && (
+        // Positioning and glass-styling deliberately live on separate
+        // nodes — .glass-pill's (layered) `position: relative` otherwise
+        // beats an `absolute` utility on the same element under CSS
+        // cascade layers, leaving this stuck in normal flow below the fold.
+        <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+          <div className="glass-pill flex items-center gap-2 px-3 py-1.5">
+            <ZoomOut className="size-3.5 text-muted-foreground" />
+            <input
+              type="range"
+              min={1}
+              max={2.5}
+              step={0.05}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="h-1 w-28 cursor-pointer appearance-none rounded-full bg-white/20 accent-white"
+              aria-label="Zoom"
+            />
+            <ZoomIn className="size-3.5 text-muted-foreground" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Small preview card in the details panel that tilts in 3D toward the
+ * cursor like a physical photo, plus a looping shimmer sweep so the
+ * panel doesn't feel static even before you touch it. */
+function TiltThumbnail({ item }: { item: ApiItem }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const src = item.blobUrl ?? item.previewImageUrl;
+  if (!src) return null;
+
+  function onMove(e: React.MouseEvent) {
+    const rect = ref.current!.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    setTilt({ rx: (0.5 - py) * 22, ry: (px - 0.5) * 22 });
+  }
+
+  return (
+    <div className="[perspective:600px]">
+      <div
+        ref={ref}
+        onMouseMove={onMove}
+        onMouseLeave={() => setTilt({ rx: 0, ry: 0 })}
+        className="shimmer-sweep relative size-20 shrink-0 overflow-hidden rounded-xl shadow-[0_8px_20px_-6px_rgba(0,0,0,0.5)] transition-transform duration-150 ease-out will-change-transform"
+        style={{ transform: `rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)` }}
+      >
+        <Image src={src} alt="" fill className="object-cover" unoptimized />
+      </div>
     </div>
   );
 }
 
 function MainVisual({
   item,
+  zoom,
   onNoteUpdate,
 }: {
   item: ApiItem;
+  zoom: number;
   onNoteUpdate: (payload: { json: JSONContent; text: string }) => void;
 }) {
   if (item.type === "image" && item.blobUrl) {
     return (
-      <Image
-        src={item.blobUrl}
-        alt={item.title ?? "Saved image"}
-        width={item.width ?? 1200}
-        height={item.height ?? 900}
-        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
-        unoptimized
-      />
+      <div
+        className="max-h-full max-w-full transition-transform duration-150 ease-out"
+        style={{ transform: `scale(${zoom})` }}
+      >
+        <Image
+          src={item.blobUrl}
+          alt={item.title ?? "Saved image"}
+          width={item.width ?? 1200}
+          height={item.height ?? 900}
+          className={cn(
+            "max-h-[calc(100vh-11rem)] max-w-full rounded-lg object-contain shadow-2xl",
+          )}
+          unoptimized
+        />
+      </div>
     );
   }
 
@@ -295,7 +395,10 @@ function MainVisual({
 
   // note & task
   return (
-    <div className="glass-panel h-full max-h-[70vh] w-full max-w-2xl overflow-y-auto rounded-2xl p-6">
+    <div
+      className="glass-panel h-full max-h-[70vh] w-full max-w-2xl overflow-y-auto rounded-2xl p-6"
+      onClick={(e) => e.stopPropagation()}
+    >
       <NoteEditor
         content={(item.bodyJson as JSONContent) ?? item.bodyText}
         onUpdate={onNoteUpdate}

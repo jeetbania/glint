@@ -11,13 +11,14 @@ export async function GET(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { type, tag, color, collection, q, limit, offset } = parsed.data;
+  const { type, tag, color, collection, q, sort, limit, offset } = parsed.data;
   const results = await listItems({
-    type,
+    types: type,
     tagSlug: tag,
     color,
     collectionSlug: collection,
     q,
+    sort,
     limit,
     offset,
   });
