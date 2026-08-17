@@ -118,14 +118,21 @@ export function NotesView() {
             </Button>
           </div>
         </div>
-        <div className="relative shrink-0 px-4 pb-3">
-          <Search className="absolute left-6.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search notes…"
-            className="h-8 pl-8 text-sm"
-          />
+        <div className="shrink-0 px-4 pb-3">
+          {/* The icon's positioned ancestor must be a snug wrapper around
+              just the input — centering it against the outer div above
+              (which also carries pb-3) skews `top-1/2` by that extra
+              padding, since percentage centering is relative to the
+              *containing block's* full height, not the input's. */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search notes…"
+              className="h-8 pl-9 text-sm"
+            />
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
@@ -308,7 +315,7 @@ function NoteDetailPane({
           // base utility when the override targets the exact same
           // variant scope. Without `md:text-2xl` too, the base
           // `md:text-sm` silently wins on any desktop-width viewport.
-          className="mb-3 h-auto border-none px-0 py-1.5 font-heading text-2xl leading-tight font-semibold tracking-heading shadow-none focus-visible:ring-0 md:text-2xl"
+          className="mb-3 h-auto border-none px-4 py-2 font-heading text-2xl leading-tight font-semibold tracking-heading shadow-none focus-visible:ring-0 md:text-2xl"
         />
 
         <div className="mb-4 flex flex-wrap items-center gap-4">

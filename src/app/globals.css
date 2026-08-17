@@ -163,6 +163,22 @@
 html[data-tauri-shell] body {
   background: transparent;
 }
+/* The web/browser version insets the whole app shell by `p-2` to show a
+   rounded "floating card" over the page background — but in the actual
+   Tauri window (titleBarStyle: Overlay, hiddenTitle: true), that inset
+   left a dead gap between the true window top and the header below it.
+   The traffic lights sit in that gap, disconnected from the app's own
+   header, and — since data-tauri-drag-region only lives on the header —
+   that same gap wasn't draggable either. Filling the window edge-to-edge
+   in Tauri fixes both: the header (and its drag region) now starts
+   exactly where the traffic lights are, matching how every other native
+   overlay-title-bar app is laid out. */
+html[data-tauri-shell] [data-app-frame] {
+  padding: 0;
+}
+html[data-tauri-shell] [data-app-shell] {
+  border-radius: 0;
+}
 html[data-tauri-shell] [data-app-header] {
   padding-left: 4.5rem;
 }

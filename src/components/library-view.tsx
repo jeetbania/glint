@@ -186,19 +186,23 @@ export function LibraryView({
             {emptyMessage}
           </div>
         )}
-        <Masonry
-          breakpointCols={breakpoints}
-          className="masonry-grid"
-          columnClassName="masonry-grid-column"
-        >
-          {items.map((item) => (
-            <ItemCard
-              key={item.id}
-              item={item}
-              onClick={() => setSelectedItemId(item.id)}
-            />
-          ))}
-        </Masonry>
+        {isLoading && items.length === 0 ? (
+          <LibrarySkeleton breakpoints={breakpoints} />
+        ) : (
+          <Masonry
+            breakpointCols={breakpoints}
+            className="masonry-grid"
+            columnClassName="masonry-grid-column"
+          >
+            {items.map((item) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                onClick={() => setSelectedItemId(item.id)}
+              />
+            ))}
+          </Masonry>
+        )}
       </div>
 
       <ItemDetailDialog
@@ -206,5 +210,34 @@ export function LibraryView({
         onOpenChange={(open) => !open && setSelectedItemId(null)}
       />
     </div>
+  );
+}
+
+// Cycled, not random — a fixed pattern avoids a hydration mismatch
+// between server and client render and still reads as "masonry" instead
+// of a flat grid of identical boxes.
+const SKELETON_HEIGHTS = [220, 160, 280, 190, 240, 170, 260, 200];
+
+/** Shown in place of a blank pane while the very first fetch for a view
+ * is in flight — the network round trip to this app's DB can take a
+ * couple of seconds, and a blank content area during that reads as
+ * "broken" far more than a skeleton does, even though the actual wait
+ * is identical either way. */
+function LibrarySkeleton({
+  breakpoints,
+}: {
+  breakpoints: { default: number; [key: number]: number };
+}) {
+  const count = breakpoints.default * 3;
+  return (
+    <Masonry breakpointCols={breakpoints} className="masonry-grid" columnClassName="masonry-grid-column">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="animate-pulse rounded-xl bg-foreground/6"
+          style={{ height: SKELETON_HEIGHTS[i % SKELETON_HEIGHTS.length] }}
+        />
+      ))}
+    </Masonry>
   );
 }

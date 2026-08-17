@@ -21,7 +21,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           just matches the page background. The shell inside is a single
           grounded panel (not glass-everywhere) matching the "clean but
           usable" native reference. */}
-      <div className="h-screen w-screen overflow-hidden p-2">
+      <div data-app-frame className="h-screen w-screen overflow-hidden p-2">
         <div
           data-app-shell
           className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl"
