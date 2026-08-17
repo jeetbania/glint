@@ -91,9 +91,9 @@ export function LibraryView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="glass-panel sticky top-3 z-10 mx-3 space-y-3 rounded-2xl px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="relative max-w-sm flex-1">
+      <div className="space-y-4 px-6 pb-4 pt-6">
+        <div className="flex items-center gap-4">
+          <div className="relative max-w-xs flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -106,19 +106,22 @@ export function LibraryView({
             />
           </div>
           {!fixedType && (
-            <div className="flex gap-1">
+            <div className="flex items-center gap-5">
               {TYPE_FILTERS.map((f) => (
                 <button
                   key={f.value}
                   onClick={() => setType(f.value)}
                   className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium transition-all",
+                    "relative pb-1 text-sm font-medium transition-colors",
                     type === f.value
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground",
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {f.label}
+                  {type === f.value && (
+                    <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
+                  )}
                 </button>
               ))}
             </div>
@@ -196,7 +199,7 @@ export function LibraryView({
         )}
       </div>
 
-      <div className="flex-1 px-6 py-4">
+      <div className="flex-1 px-6 pb-6">
         {!isLoading && items.length === 0 && (
           <div className="flex h-64 items-center justify-center text-center text-sm text-muted-foreground">
             {emptyMessage}

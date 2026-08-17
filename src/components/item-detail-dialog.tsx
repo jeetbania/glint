@@ -2,15 +2,10 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { Trash2, ExternalLink } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { X, Trash2, ExternalLink, Link as LinkIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TagEditor } from "@/components/tag-editor";
@@ -32,24 +27,24 @@ export function ItemDetailDialog({
   const item = data?.item;
 
   return (
-    <Dialog open={!!itemId} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
-        {!item ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            Loading…
-          </div>
-        ) : (
-          // Keyed by item.id so switching items remounts this and local
-          // (title) state initializes fresh, instead of syncing it via
-          // an effect.
-          <ItemDetailContent
-            key={item.id}
-            item={item}
-            onClose={() => onOpenChange(false)}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <DialogPrimitive.Root open={!!itemId} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <DialogPrimitive.Popup className="fixed inset-0 z-50 outline-none duration-150 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
+          {item ? (
+            <ItemDetailContent
+              key={item.id}
+              item={item}
+              onClose={() => onOpenChange(false)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-white/50">
+              Loading…
+            </div>
+          )}
+        </DialogPrimitive.Popup>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
@@ -108,99 +103,163 @@ function ItemDetailContent({
     refreshLibrary();
   }
 
+  const glowColor = item.dominantColors?.[0]?.hex;
+
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle className="sr-only">{item.title ?? item.type}</DialogTitle>
-      </DialogHeader>
-
-      {item.type === "image" && item.blobUrl && (
-        <div className="relative max-h-[45vh] w-full overflow-hidden rounded-md bg-muted">
-          <Image
-            src={item.blobUrl}
-            alt={item.title ?? "Saved image"}
-            width={item.width ?? 800}
-            height={item.height ?? 600}
-            className="max-h-[45vh] w-full object-contain"
-            unoptimized
-          />
-        </div>
-      )}
-
-      {item.type === "link" && (
-        <a
-          href={item.url ?? "#"}
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-2 rounded-md border p-3 text-sm hover:bg-muted/50"
-        >
-          {item.previewImageUrl && (
-            <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded bg-muted">
-              <Image
-                src={item.previewImageUrl}
-                alt=""
-                fill
-                className="object-cover"
-                unoptimized
-              />
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{item.title ?? item.url}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {item.domain ?? item.url}
-            </p>
-          </div>
-          <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
-        </a>
-      )}
-
-      <Input
-        value={title}
-        onChange={(e) => {
-          setTitle(e.target.value);
-          saveTitle(e.target.value);
-        }}
-        placeholder="Untitled"
-        className="!border-none !bg-transparent !shadow-none px-0 font-heading text-lg font-semibold tracking-heading focus-visible:!ring-0"
-      />
-
-      {(item.type === "note" || item.type === "task") && (
-        <NoteEditor
-          content={(item.bodyJson as JSONContent) ?? item.bodyText}
-          onUpdate={saveNote}
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-background">
+      {glowColor && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-50 blur-[140px]"
+          style={{
+            backgroundImage: `radial-gradient(60% 55% at 32% 28%, ${glowColor}, transparent 70%)`,
+          }}
         />
       )}
 
-      {item.dominantColors && item.dominantColors.length > 0 && (
-        <div className="flex items-center gap-1.5">
-          {item.dominantColors.map((c, i) => (
-            <span
-              key={i}
-              title={c.hex}
-              className="size-5 rounded-full border"
-              style={{ backgroundColor: c.hex }}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium text-muted-foreground">Tags</p>
-        <TagEditor tags={item.tags.map((t) => t.name)} onChange={saveTags} />
-      </div>
-
-      <div className="flex justify-end border-t pt-3">
+      <div className="relative z-10 flex shrink-0 items-center justify-between px-5 py-4">
+        <DialogPrimitive.Close render={<Button variant="outline" size="icon-sm" />}>
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+        <DialogPrimitive.Title className="sr-only">
+          {item.title ?? item.type}
+        </DialogPrimitive.Title>
         <Button
-          variant="ghost"
-          size="sm"
+          variant="outline"
+          size="icon-sm"
           onClick={handleDelete}
           className="text-destructive hover:text-destructive"
+          aria-label="Delete"
         >
           <Trash2 className="size-4" />
-          Delete
         </Button>
       </div>
-    </>
+
+      <div className="relative z-10 flex min-h-0 flex-1 gap-4 px-5 pb-5">
+        <div className="flex min-w-0 flex-1 items-center justify-center overflow-hidden">
+          <MainVisual item={item} onNoteUpdate={saveNote} />
+        </div>
+
+        <aside className="glass-panel hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
+          {item.dominantColors && item.dominantColors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {item.dominantColors.map((c, i) => (
+                <span
+                  key={i}
+                  title={c.hex}
+                  className="size-6 rounded-full border border-white/10 shadow-sm"
+                  style={{ backgroundColor: c.hex }}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Name</p>
+            <Input
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                saveTitle(e.target.value);
+              }}
+              placeholder="Untitled"
+              className="font-heading font-semibold tracking-heading"
+            />
+          </div>
+
+          {item.type === "link" && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">URL</p>
+              <a
+                href={item.url ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 truncate text-xs text-primary hover:underline"
+              >
+                <LinkIcon className="size-3 shrink-0" />
+                <span className="truncate">{item.url}</span>
+              </a>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Tags</p>
+            <TagEditor tags={item.tags.map((t) => t.name)} onChange={saveTags} />
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function MainVisual({
+  item,
+  onNoteUpdate,
+}: {
+  item: ApiItem;
+  onNoteUpdate: (payload: { json: JSONContent; text: string }) => void;
+}) {
+  if (item.type === "image" && item.blobUrl) {
+    return (
+      <Image
+        src={item.blobUrl}
+        alt={item.title ?? "Saved image"}
+        width={item.width ?? 1200}
+        height={item.height ?? 900}
+        className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+        unoptimized
+      />
+    );
+  }
+
+  if (item.type === "link") {
+    return (
+      <a
+        href={item.url ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="group/link glass-panel relative flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl"
+      >
+        {item.previewImageUrl ? (
+          <div className="relative aspect-video w-full bg-muted">
+            <Image
+              src={item.previewImageUrl}
+              alt=""
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          </div>
+        ) : null}
+        <div className="flex items-center gap-3 p-5">
+          {item.faviconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.faviconUrl} alt="" className="size-8 shrink-0 rounded" />
+          ) : (
+            <LinkIcon className="size-8 shrink-0 text-muted-foreground" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-heading text-base font-semibold tracking-heading">
+              {item.title ?? item.url}
+            </p>
+            <p className="truncate text-sm text-muted-foreground">
+              {item.domain ?? item.url}
+            </p>
+          </div>
+          <ExternalLink className="size-4 shrink-0 text-muted-foreground transition-transform group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5" />
+        </div>
+      </a>
+    );
+  }
+
+  // note & task
+  return (
+    <div className="glass-panel h-full max-h-[70vh] w-full max-w-2xl overflow-y-auto rounded-2xl p-6">
+      <NoteEditor
+        content={(item.bodyJson as JSONContent) ?? item.bodyText}
+        onUpdate={onNoteUpdate}
+      />
+    </div>
   );
 }

@@ -1,33 +1,42 @@
-import { Sidebar } from "@/components/sidebar";
+import Link from "next/link";
+import { Tag, Palette, LogOut } from "lucide-react";
+import { TopNav } from "@/components/top-nav";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SwrProvider>
-      <div className="flex h-screen w-full overflow-hidden">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="glass-panel mx-3 mt-3 flex h-12 shrink-0 items-center justify-end gap-1 rounded-full px-2">
+      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+        <header className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 pt-3">
+          <Link
+            href="/library"
+            className="flex items-center gap-1.5 font-heading text-sm font-semibold tracking-heading"
+          >
+            Glint
+          </Link>
+
+          <TopNav />
+
+          <div className="flex items-center justify-end gap-1.5">
+            <Button variant="outline" size="icon-sm" render={<Link href="/tags" />}>
+              <Tag className="size-4" />
+            </Button>
+            <Button variant="outline" size="icon-sm" render={<Link href="/colors" />}>
+              <Palette className="size-4" />
+            </Button>
             <ThemeToggle />
             <form action={logout}>
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-              >
+              <Button type="submit" variant="outline" size="icon-sm" aria-label="Log out">
                 <LogOut className="size-4" />
-                Log out
               </Button>
             </form>
-          </header>
-          <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
-        </div>
+          </div>
+        </header>
+        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <PasteCaptureProvider />
     </SwrProvider>

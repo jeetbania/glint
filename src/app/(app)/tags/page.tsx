@@ -18,8 +18,8 @@ export default async function TagsPage() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="mb-4 font-heading text-lg font-semibold tracking-heading">
+    <div className="px-6 py-6">
+      <h1 className="mb-5 font-heading text-lg font-semibold tracking-heading">
         Tags
       </h1>
       <div className="flex flex-wrap gap-2">
