@@ -3,6 +3,9 @@ import { Palette } from "lucide-react";
 import { listColorFamilyCounts } from "@/lib/items";
 import { swatchHex } from "@/lib/color";
 
+// Color-family counts change on every paste — never serve a build-time snapshot.
+export const dynamic = "force-dynamic";
+
 export default async function ColorsPage() {
   const colors = await listColorFamilyCounts();
 

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { Tag } from "lucide-react";
 import { listTagsWithCounts } from "@/lib/items";
 
+// Tag counts change on every paste — never serve a build-time snapshot.
+export const dynamic = "force-dynamic";
+
 export default async function TagsPage() {
   const tags = await listTagsWithCounts();
 
