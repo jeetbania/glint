@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
+import { Tabs } from "@/components/ui/tabs";
 import { ItemCard } from "@/components/item-card";
 import { ItemDetailDialog } from "@/components/item-detail-dialog";
 import { CollectionsRow } from "@/components/collections-row";
@@ -21,7 +22,6 @@ import { FilterMenu } from "@/components/filter-menu";
 import { SortMenu, type SortValue } from "@/components/sort-menu";
 import { SizeSlider } from "@/components/size-slider";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
-import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
 
 /** The main Library view is visuals-only by default (images + links) —
@@ -122,25 +122,11 @@ export function LibraryView({
             />
           </div>
           {!fixedType && showTypeFilters && (
-            <div className="flex items-center gap-5">
-              {VISUAL_TYPE_FILTERS.map((f) => (
-                <button
-                  key={f.value}
-                  onClick={() => setTypeFilter(f.value)}
-                  className={cn(
-                    "relative pb-1 text-sm font-medium transition-colors",
-                    typeFilter === f.value
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {f.label}
-                  {typeFilter === f.value && (
-                    <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
-                  )}
-                </button>
-              ))}
-            </div>
+            <Tabs
+              items={VISUAL_TYPE_FILTERS}
+              value={typeFilter}
+              onChange={setTypeFilter}
+            />
           )}
 
           <div className="ml-auto flex items-center gap-2">

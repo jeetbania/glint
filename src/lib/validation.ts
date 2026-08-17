@@ -79,3 +79,19 @@ export const setItemPositionSchema = z.object({
   h: z.number().positive(),
   zIndex: z.number().int(),
 });
+
+export const createKanbanColumnSchema = z.object({
+  name: z.string().min(1).max(60),
+});
+export const renameKanbanColumnSchema = z.object({
+  name: z.string().min(1).max(60),
+});
+export const createKanbanCardSchema = z.object({
+  columnId: z.string().uuid(),
+  title: z.string().min(1).max(300),
+});
+export const moveKanbanCardSchema = z.object({
+  columnId: z.string().uuid(),
+  beforeOrder: z.string().nullable(),
+  afterOrder: z.string().nullable(),
+});

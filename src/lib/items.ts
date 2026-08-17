@@ -32,8 +32,9 @@ export type ListItemsFilters = {
 };
 
 /** Attach tags + collections to a list of items in bulk queries instead
- * of N+1. */
-async function attachTags(
+ * of N+1. Exported for lib/kanban.ts, which needs the same shape for
+ * cards' underlying task items without duplicating the join logic. */
+export async function attachTags(
   rows: (typeof items.$inferSelect)[],
 ): Promise<ItemWithTags[]> {
   if (rows.length === 0) return [];

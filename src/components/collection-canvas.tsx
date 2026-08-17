@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { FileText, CheckSquare, Link as LinkIcon, Minus, Plus, LocateFixed } from "lucide-react";
+import { Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
 
@@ -216,20 +217,15 @@ export function CollectionCanvas({
           utility on the same element under CSS cascade layers. */}
       <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2">
       <div className="glass-pill pointer-events-auto flex items-center gap-1 p-1">
-        {(["all", "image", "link", "note", "task"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTypeFilter(t)}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-xs font-medium capitalize transition-colors",
-              typeFilter === t
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t === "all" ? "All" : `${t}s`}
-          </button>
-        ))}
+        <Tabs
+          glass={false}
+          items={(["all", "image", "link", "note", "task"] as const).map((t) => ({
+            value: t,
+            label: t === "all" ? "All" : `${t}s`,
+          }))}
+          value={typeFilter}
+          onChange={(v) => setTypeFilter(v as typeof typeFilter)}
+        />
         {availableTags.length > 0 && (
           <>
             <span className="mx-1 h-4 w-px bg-border" />

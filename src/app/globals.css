@@ -399,6 +399,76 @@ html[data-tauri-shell] [data-item-detail-header] {
     flex: 1;
   }
 
+  /* Glassy pastel folder cards — one hue per folder (set inline via
+     --folder-hue), mixed into the theme's own glass tokens with
+     color-mix rather than hardcoded light/dark branches. That mixing is
+     what makes a single recipe correct in both themes automatically:
+     in dark mode --glass-bg-strong is near-black, so the mix reads as a
+     saturated dark tinted glass; in light mode it's a warm off-white,
+     so the exact same rule reads as a soft light tinted glass. */
+  .folder-card-swatch {
+    background-image: linear-gradient(
+      165deg,
+      color-mix(in oklch, oklch(82% 0.15 var(--folder-hue)) 88%, var(--background)) 0%,
+      color-mix(in oklch, oklch(74% 0.17 var(--folder-hue)) 88%, var(--background)) 100%
+    );
+    backdrop-filter: blur(18px) saturate(1.5);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  }
+  .folder-card-panel {
+    background: color-mix(in oklch, oklch(72% 0.16 var(--folder-hue)) 22%, var(--glass-bg-strong));
+    backdrop-filter: blur(20px) saturate(1.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    border-top: 1px solid
+      color-mix(in oklch, oklch(78% 0.16 var(--folder-hue)) 45%, var(--glass-border));
+  }
+
+  /* Sliding-pill tabs (ui/tabs.tsx) — ported from transitions.dev's
+     "tabs sliding" pattern. The bar/tab/pill sizing lives in the
+     component itself (Tailwind classes); this is just the
+     prefers-reduced-motion guard the transition spec requires. */
+  @media (prefers-reduced-motion: reduce) {
+    .t-tabs span,
+    .t-tabs button {
+      transition: none !important;
+    }
+  }
+
+  /* One-shot confetti burst (lib/confetti.ts) for finishing a task —
+     see the file for why this is imperative/DOM-created rather than a
+     toggled class on a persistent element like transitions.dev's own
+     like-button burst it's adapted from. */
+  .confetti-particle {
+    position: absolute;
+    left: calc(3px * var(--psize, 1) / -2);
+    top: calc(3px * var(--psize, 1) / -2);
+    width: calc(3px * var(--psize, 1));
+    height: calc(3px * var(--psize, 1));
+    border-radius: 50%;
+    background: oklch(72% 0.16 var(--phue, 0));
+    opacity: 0;
+    animation: confetti-burst var(--pdur, 650ms) ease-out var(--pdelay, 0ms) forwards;
+  }
+  @keyframes confetti-burst {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.4);
+    }
+    20% {
+      opacity: 1;
+      transform: translate(calc(var(--px) * 0.25), calc(var(--py) * 0.25)) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--px), var(--py)) scale(0.6);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .confetti-particle {
+      animation: none !important;
+    }
+  }
+
   /* Looping shimmer sweep for the item-detail thumbnail — a soft
      diagonal band that crosses the card every few seconds so the panel
      reads as alive even before the user's cursor reaches it. */

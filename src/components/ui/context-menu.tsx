@@ -17,10 +17,19 @@ function ContextMenuTrigger({
   className,
   ...props
 }: ContextMenuPrimitive.Trigger.Props) {
+  // Plain block wrapper, not `display: contents` — a contents-display
+  // element generates no box, so it doesn't just disappear visually, it
+  // also stops matching CSS that targets the *box* tree. Library items
+  // rely on `.masonry-grid-column > * { margin-bottom }` for vertical
+  // gaps between stacked cards; with `contents` here, that selector's
+  // `>` matched this trigger div (a real DOM child) but the margin had
+  // nowhere to apply (no box), while the actual card — now a grandchild
+  // — never got it either. A normal div has a box, so the existing
+  // selector (and any other child-combinator styling) keeps working.
   return (
     <ContextMenuPrimitive.Trigger
       data-slot="context-menu-trigger"
-      className={cn("contents", className)}
+      className={className}
       {...props}
     />
   )

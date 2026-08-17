@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
 import { SearchTriggerButton } from "@/components/search-trigger-button";
 import { SettingsTriggerButton } from "@/components/settings-dialog";
+import { SoundUnlocker } from "@/lib/use-sound";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 
@@ -68,6 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <PasteCaptureProvider />
       <ClipboardWatchProvider />
       <CommandPalette />
+      <SoundUnlocker />
     </SwrProvider>
   );
 }

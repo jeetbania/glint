@@ -31,33 +31,32 @@ type CollectionPreview = {
   previews: string[];
 };
 
-// Card design ported from the user's own Paper mockup — a fixed dark
-// frame (#2A2A2A body, #1C1C1C info panel) with only the top gradient
-// swatch varying between folders. The mockup hardcodes one oklab
-// gradient; we keep its exact lightness/chroma "recipe" (a muted, pale
-// wash, not a vivid saturated one) and rotate only the hue per folder,
-// derived deterministically from the collection id so a given folder's
-// color is stable across reloads and reorders.
-const HUES = [8, 48, 100, 165, 225, 280] as const;
-function hueFor(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  }
-  return HUES[Math.abs(hash) % HUES.length];
-}
-function swatchGradient(hue: number): string {
-  return `linear-gradient(180deg, oklch(76% 0.09 ${hue}) 0%, oklch(72% 0.09 ${hue}) 100%)`;
+// Layout is ported from the user's own Paper mockup (the flap-overlap
+// composition), but the color recipe is ours: glassy, vibrant pastel,
+// theme-aware, and — per explicit feedback — never repeating between
+// folders. Hue is assigned by position (golden-angle spacing, ~137.5°
+// apart) rather than hashed from the id: a hash can coincidentally
+// collide or cluster for a small set of folders, while golden-angle
+// spacing guarantees maximum, even separation around the color wheel
+// no matter how many folders exist. The actual color values live in
+// globals.css (.folder-card-swatch / .folder-card-panel) as
+// color-mix() recipes against the theme's own tokens, so one hue
+// reads correctly as a pastel in both light and dark mode without any
+// manual branching here.
+const GOLDEN_ANGLE = 137.508;
+function hueForIndex(index: number): number {
+  return Math.round((index * GOLDEN_ANGLE) % 360);
 }
 
 function FolderTile({
   collection,
+  hue,
   active,
 }: {
   collection: CollectionPreview;
+  hue: number;
   active: boolean;
 }) {
-  const hue = hueFor(collection.id);
   const { rename, remove } = useCollectionActions();
   const router = useRouter();
   const [isRenaming, setIsRenaming] = useState(false);
@@ -106,8 +105,9 @@ function FolderTile({
             pointer-events-none by default so clicks fall through to it,
             except the couple of controls that opt back in explicitly. */}
         <div
+          style={{ "--folder-hue": hue } as React.CSSProperties}
           className={cn(
-            "group relative size-60 shrink-0 overflow-hidden rounded-[22px] bg-[#2A2A2A] transition-transform duration-150 hover:scale-[1.02]",
+            "group relative size-60 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
@@ -118,17 +118,20 @@ function FolderTile({
             className="absolute inset-0 z-0"
           />
 
-          {/* Top swatch — hue rotates per folder, lightness/chroma fixed. */}
+          {/* Top swatch — a unique pastel hue per folder (see
+              hueForIndex), rendered as glass (blur + translucent color)
+              rather than a flat fill. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute left-1.5 top-1.5 z-0 h-[110px] w-57 rounded-t-[15px]"
-            style={{ backgroundImage: swatchGradient(hue) }}
+            className="folder-card-swatch pointer-events-none absolute left-1.5 top-1.5 z-0 h-[110px] w-57 rounded-t-[15px]"
           />
 
           {/* Info panel — deliberately overlaps the swatch's bottom edge
               (top-24 vs. the swatch's own 6px+110px=116px reach) so it
-              reads as a flap sitting over a folder's pocket. */}
-          <div className="pointer-events-none absolute left-1.5 top-24 z-[1] flex h-34.5 w-57.25 flex-col justify-between rounded-[14px] bg-[#1C1C1C] px-3.5 py-2.5">
+              reads as a flap sitting over a folder's pocket. Same hue as
+              the swatch, just mixed into the theme's own glass token at
+              lower strength for contrast against the title/count text. */}
+          <div className="folder-card-panel pointer-events-none absolute left-1.5 top-24 z-[1] flex h-34.5 w-57.25 flex-col justify-between rounded-[14px] px-3.5 py-2.5">
             {isRenaming ? (
               <input
                 autoFocus
@@ -143,16 +146,16 @@ function FolderTile({
                   }
                 }}
                 onBlur={submitRename}
-                className="pointer-events-auto min-w-0 rounded bg-white/10 px-1 -mx-1 font-heading text-base font-medium tracking-heading text-white outline-none"
+                className="pointer-events-auto min-w-0 rounded bg-foreground/10 px-1 -mx-1 font-heading text-base font-medium tracking-heading text-foreground outline-none"
               />
             ) : (
-              <p className="truncate font-heading text-base font-medium tracking-heading text-white">
+              <p className="truncate font-heading text-base font-medium tracking-heading text-foreground">
                 {collection.name}
               </p>
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[13px] tracking-heading text-white/60">
+              <p className="text-[13px] tracking-heading text-muted-foreground">
                 {collection.count} {collection.count === 1 ? "save" : "saves"}
               </p>
               <DropdownMenu>
@@ -161,7 +164,7 @@ function FolderTile({
                     <button
                       type="button"
                       aria-label={`More options for ${collection.name}`}
-                      className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded-full text-white/60 opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100 data-popup-open:opacity-100"
+                      className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
                 >
@@ -216,8 +219,13 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
     // height, letting the masonry grid below squeeze it down to a
     // near-zero sliver instead of its real tile height.
     <div className="flex shrink-0 items-end gap-4 overflow-x-auto px-6 pb-1 pt-8">
-      {collections.map((c) => (
-        <FolderTile key={c.id} collection={c} active={activeSlug === c.slug} />
+      {collections.map((c, i) => (
+        <FolderTile
+          key={c.id}
+          collection={c}
+          hue={hueForIndex(i)}
+          active={activeSlug === c.slug}
+        />
       ))}
 
       {creating ? (
