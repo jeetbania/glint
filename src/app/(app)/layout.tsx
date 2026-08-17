@@ -1,11 +1,14 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Tag, LogOut } from "lucide-react";
 import { TopNav } from "@/components/top-nav";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
+import { ClipboardWatchProvider } from "@/components/clipboard-watch-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
 import { SearchTriggerButton } from "@/components/search-trigger-button";
+import { SettingsTriggerButton } from "@/components/settings-dialog";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
 
@@ -30,8 +33,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Link
               href="/library"
-              className="flex items-center gap-1.5 font-heading text-sm font-semibold tracking-heading"
+              className="flex items-center gap-2 font-heading text-sm font-semibold tracking-heading"
             >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={22}
+                height={22}
+                className="rounded-[6px]"
+                priority
+              />
               Glint
             </Link>
 
@@ -43,6 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <Tag className="size-4" />
               </Button>
               <ThemeToggle />
+              <SettingsTriggerButton />
               <form action={logout}>
                 <Button type="submit" variant="outline" size="icon-sm" aria-label="Log out">
                   <LogOut className="size-4" />
@@ -54,6 +66,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <PasteCaptureProvider />
+      <ClipboardWatchProvider />
       <CommandPalette />
     </SwrProvider>
   );

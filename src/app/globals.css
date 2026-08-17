@@ -85,23 +85,22 @@
   --sidebar-border: #17171a1a;
   --sidebar-ring: #3b5bdb80;
 
-  /* Liquid-glass tokens, sampled from jeetcreates.cc's buttons/pills.
-     Two tiers: --glass-bg (small accents — buttons, pills, badges) stays
+  /* Liquid-glass tokens — re-measured directly off jeetcreates.cc's own
+     glass buttons via computed styles (backgroundImage: none; just a
+     flat translucent fill + blur/saturate + a hairline border + a
+     two-layer shadow). The earlier diagonal --glass-shine sweep was our
+     own invention, not something the reference actually does, and it's
+     exactly what read as "fake" — a flat glass surface with no gradient
+     overlay is what real frosted glass looks like. Two tiers:
+     --glass-bg (small accents — buttons, pills, badges) stays
      translucent; --glass-bg-strong (structural surfaces — the app shell,
      dialogs, cards) is mostly-opaque so large surfaces read as grounded
      native panels, not see-through glass everywhere. */
-  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-bg-strong: rgba(251, 250, 247, 0.9);
   --glass-border: rgba(23, 23, 26, 0.08);
-  --glass-shadow: 0 8px 24px rgba(23, 23, 26, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  --glass-shine: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.5) 0%,
-    rgba(255, 255, 255, 0) 24%,
-    rgba(255, 255, 255, 0) 68%,
-    rgba(255, 255, 255, 0.25) 100%
-  );
+  --glass-shadow: 0 1px 3px rgba(23, 23, 26, 0.12),
+    0 8px 24px rgba(23, 23, 26, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .dark {
@@ -137,18 +136,11 @@
   --sidebar-border: #ffffff14;
   --sidebar-ring: #7c93f280;
 
-  --glass-bg: rgba(255, 255, 255, 0.09);
+  --glass-bg: rgba(255, 255, 255, 0.1);
   --glass-bg-strong: rgba(19, 19, 21, 0.88);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --glass-shine: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0) 24%,
-    rgba(255, 255, 255, 0) 68%,
-    rgba(255, 255, 255, 0.05) 100%
-  );
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
+    0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 @layer base {
@@ -182,9 +174,12 @@ html[data-tauri-shell] [data-item-detail-header] {
 
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the
-   backdrop-filter recipe measured off jeetcreates.cc's buttons/tags,
-   plus a diagonal light-sheen highlight so the surface reads as actual
-   glass catching light rather than a flat tinted rectangle.
+   backdrop-filter recipe measured directly off jeetcreates.cc's own
+   buttons via computed styles: a flat translucent fill, blur+saturate,
+   a hairline border, and a two-layer shadow (soft outer + a barely-there
+   inset top highlight). No gradient/shine overlay — the reference has
+   none (`backgroundImage: none`), and adding one is what made earlier
+   passes at this read as fake/plasticky instead of like real glass.
 
    These live in @layer utilities (rather than as bare/unlayered rules)
    so they cascade the same way Tailwind's own utilities do — an
@@ -210,24 +205,9 @@ html[data-tauri-shell] [data-item-detail-header] {
   }
   .glass-pill {
     background: var(--glass-bg);
-    backdrop-filter: blur(14px) saturate(1.6);
-    -webkit-backdrop-filter: blur(14px) saturate(1.6);
+    backdrop-filter: blur(12px) saturate(1.6);
+    -webkit-backdrop-filter: blur(12px) saturate(1.6);
     border-radius: 9999px;
-  }
-  .glass-panel::before,
-  .glass-pill::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background-image: var(--glass-shine);
-    pointer-events: none;
-    z-index: 0;
-  }
-  .glass-panel > *,
-  .glass-pill > * {
-    position: relative;
-    z-index: 1;
   }
 
   /* Vivid gradient accents — used only for functional coding (item-type
@@ -243,6 +223,75 @@ html[data-tauri-shell] [data-item-detail-header] {
   }
   .gradient-sage {
     background-image: linear-gradient(135deg, #bef264, #4ade80);
+  }
+
+  /* Pastel-tinted glass — the same flat-glass recipe as .glass-panel
+     (blur + saturate + hairline border + soft shadow, no shine overlay)
+     but with a low-alpha color wash instead of a neutral fill, so
+     Collections folders read as actual colorful frosted glass rather
+     than plain gray panels — echoing jeetcreates.cc's colorful project
+     cards, translated into glass instead of solid gradients. Rotated
+     across collections by CollectionsRow, not picked by the user. */
+  .glass-tint-mint,
+  .glass-tint-lavender,
+  .glass-tint-peach,
+  .glass-tint-sky,
+  .glass-tint-rose,
+  .glass-tint-sage {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    box-shadow: var(--glass-shadow);
+  }
+  .glass-tint-mint {
+    background: linear-gradient(
+      145deg,
+      rgba(110, 231, 183, 0.32),
+      rgba(45, 212, 191, 0.1)
+    );
+    border: 1px solid rgba(110, 231, 183, 0.28);
+  }
+  .glass-tint-lavender {
+    background: linear-gradient(
+      145deg,
+      rgba(192, 132, 252, 0.32),
+      rgba(244, 114, 182, 0.1)
+    );
+    border: 1px solid rgba(192, 132, 252, 0.28);
+  }
+  .glass-tint-peach {
+    background: linear-gradient(
+      145deg,
+      rgba(253, 186, 116, 0.32),
+      rgba(251, 113, 133, 0.1)
+    );
+    border: 1px solid rgba(253, 186, 116, 0.28);
+  }
+  .glass-tint-sky {
+    background: linear-gradient(
+      145deg,
+      rgba(125, 211, 252, 0.32),
+      rgba(96, 165, 250, 0.1)
+    );
+    border: 1px solid rgba(125, 211, 252, 0.28);
+  }
+  .glass-tint-rose {
+    background: linear-gradient(
+      145deg,
+      rgba(244, 114, 182, 0.32),
+      rgba(251, 113, 133, 0.1)
+    );
+    border: 1px solid rgba(244, 114, 182, 0.28);
+  }
+  .glass-tint-sage {
+    background: linear-gradient(
+      145deg,
+      rgba(190, 242, 100, 0.32),
+      rgba(74, 222, 128, 0.1)
+    );
+    border: 1px solid rgba(190, 242, 100, 0.28);
   }
 
   /* react-masonry-css: library ships no CSS of its own, just the column

@@ -24,3 +24,17 @@ log = "0.4"
 tauri = { version = "2.11.3", features = ["macos-private-api"] }
 tauri-plugin-log = "2"
 window-vibrancy = "0.8.0"
+base64 = "0.22.1"
+
+# Clipboard access is hand-written directly against AppKit's NSPasteboard
+# (rather than pulling in arboard/image, which need a network fetch of
+# ~40 new transitive packages) — objc2/objc2-foundation/objc2-app-kit are
+# *already* transitive dependencies of wry (tauri's webview layer) for
+# window/menu handling, so this reuses crates already resolved and
+# vendored locally instead of adding new ones. macOS-only, matching the
+# vibrancy code's own #[cfg(target_os = "macos")] scoping below — no
+# clipboard-watcher on other platforms for now.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSString"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard"] }

@@ -34,7 +34,21 @@ const OPEN_POS = [
   { x: 22, y: -10, rotate: 14 },
 ];
 
+// Colorful pastel glass, not plain gray — deterministic per collection
+// (hashed off its id, so a given folder keeps its color across reloads
+// and reorders) rather than user-picked, echoing jeetcreates.cc's
+// colorful project cards translated into glass instead of solid fills.
+const TINTS = ["mint", "lavender", "peach", "sky", "rose", "sage"] as const;
+function tintFor(id: string): (typeof TINTS)[number] {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  }
+  return TINTS[Math.abs(hash) % TINTS.length];
+}
+
 function FolderTile({ collection, active }: { collection: CollectionPreview; active: boolean }) {
+  const tint = `glass-tint-${tintFor(collection.id)}`;
   const flapRef = useRef<HTMLDivElement>(null);
   const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -73,8 +87,8 @@ function FolderTile({ collection, active }: { collection: CollectionPreview; act
           beats an `absolute` utility on the same element under CSS
           cascade layers, leaving it stuck in normal flow. */}
       <div className="absolute inset-0">
-        <div className="glass-panel flex h-full flex-col overflow-hidden rounded-xl">
-          <div className="relative flex h-16 shrink-0 items-end justify-center overflow-hidden bg-foreground/4 pb-1">
+        <div className={cn(tint, "flex h-full flex-col overflow-hidden rounded-xl")}>
+          <div className="relative flex h-16 shrink-0 items-end justify-center overflow-hidden bg-black/5 pb-1 dark:bg-black/10">
             {collection.previews.length > 0 ? (
               collection.previews.slice(0, 3).map((src, i) => (
                 <div
@@ -105,7 +119,7 @@ function FolderTile({ collection, active }: { collection: CollectionPreview; act
         className="absolute inset-x-0 top-0 h-8 origin-top will-change-transform"
         style={{ transformStyle: "preserve-3d" }}
       >
-        <div className="glass-panel h-full rounded-t-xl" />
+        <div className={cn(tint, "h-full rounded-t-xl")} />
       </div>
     </Link>
   );
@@ -138,7 +152,13 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto px-6 pb-1 pt-6">
+    // `shrink-0` is load-bearing, not decorative: LibraryView's root is a
+    // fixed-height column flex container, and `overflow-x-auto` here
+    // forces `overflow-y` to also compute as non-`visible` per the CSS
+    // Overflow spec — which strips this row's flexbox automatic minimum
+    // height, letting the masonry grid below squeeze it down to a
+    // near-zero sliver instead of its real ~7rem tile height.
+    <div className="flex shrink-0 gap-3 overflow-x-auto px-6 pb-1 pt-6">
       {collections.map((c) => (
         <FolderTile key={c.id} collection={c} active={activeSlug === c.slug} />
       ))}

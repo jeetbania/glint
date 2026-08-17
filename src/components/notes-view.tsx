@@ -302,7 +302,13 @@ function NoteDetailPane({
             saveTitle(e.target.value);
           }}
           placeholder="Untitled"
-          className="mb-3 border-none px-0 font-heading text-2xl font-semibold tracking-heading shadow-none focus-visible:ring-0"
+          // The base Input component bakes in `h-8` and a responsive
+          // `md:text-sm` — both need an explicit override here (not just
+          // `text-2xl`), since tailwind-merge only drops a conflicting
+          // base utility when the override targets the exact same
+          // variant scope. Without `md:text-2xl` too, the base
+          // `md:text-sm` silently wins on any desktop-width viewport.
+          className="mb-3 h-auto border-none px-0 py-1.5 font-heading text-2xl leading-tight font-semibold tracking-heading shadow-none focus-visible:ring-0 md:text-2xl"
         />
 
         <div className="mb-4 flex flex-wrap items-center gap-4">
