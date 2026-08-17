@@ -22,6 +22,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import { isTauri } from "@/lib/is-tauri";
 import { cn } from "@/lib/utils";
@@ -191,13 +192,17 @@ function CaptureSection() {
   );
 }
 
-function ShortcutRow({ keys, label }: { keys: string; label: string }) {
+function ShortcutRow({ keys, label }: { keys: string[]; label: string }) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-sm">{label}</span>
-      <kbd className="rounded-md bg-foreground/8 px-2 py-1 text-xs text-muted-foreground">
-        {keys}
-      </kbd>
+    <div className="flex items-center justify-between rounded-lg px-2.5 py-2.5 transition-colors hover:bg-foreground/4">
+      <span className="text-sm font-medium">{label}</span>
+      <div className="flex items-center gap-1">
+        {keys.map((k, i) => (
+          <Kbd key={i} className="min-w-6 px-2 py-1 text-center text-xs">
+            {k}
+          </Kbd>
+        ))}
+      </div>
     </div>
   );
 }
@@ -206,13 +211,13 @@ function ShortcutsSection() {
   return (
     <div>
       <SectionHeading>Keyboard shortcuts</SectionHeading>
-      <div className="divide-y divide-border/60">
-        <ShortcutRow keys="⌘K" label="Open command palette" />
-        <ShortcutRow keys="⌘⇧N" label="New note" />
-        <ShortcutRow keys="⌘⇧T" label="New task" />
-        <ShortcutRow keys="↑ ↓" label="Navigate palette results" />
-        <ShortcutRow keys="↵" label="Open selected result" />
-        <ShortcutRow keys="Esc" label="Close dialog / palette" />
+      <div className="space-y-0.5">
+        <ShortcutRow keys={["⌘", "K"]} label="Open command palette" />
+        <ShortcutRow keys={["⌘", "⇧", "N"]} label="New note" />
+        <ShortcutRow keys={["⌘", "⇧", "T"]} label="New task" />
+        <ShortcutRow keys={["↑", "↓"]} label="Navigate palette results" />
+        <ShortcutRow keys={["↵"]} label="Open selected result" />
+        <ShortcutRow keys={["Esc"]} label="Close dialog / palette" />
       </div>
     </div>
   );

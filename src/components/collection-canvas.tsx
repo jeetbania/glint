@@ -214,7 +214,7 @@ export function CollectionCanvas({
           and glass-styling live on separate nodes: .glass-pill's
           (layered) `position: relative` otherwise beats an `absolute`
           utility on the same element under CSS cascade layers. */}
-      <div className="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2">
+      <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2">
       <div className="glass-pill pointer-events-auto flex items-center gap-1 p-1">
         {(["all", "image", "link", "note", "task"] as const).map((t) => (
           <button
@@ -294,7 +294,11 @@ export function CollectionCanvas({
 
       <div
         ref={viewportRef}
-        className="h-full w-full cursor-grab touch-none active:cursor-grabbing"
+        className="dot-grid-bg h-full w-full cursor-grab touch-none active:cursor-grabbing"
+        style={{
+          backgroundPosition: `${pan.x}px ${pan.y}px`,
+          backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+        }}
         onWheel={onWheel}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}

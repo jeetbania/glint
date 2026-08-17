@@ -25,7 +25,7 @@ export default function CollectionPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-6 pb-2 pt-6">
+      <div className="flex shrink-0 items-center gap-3 px-6 pb-1 pt-3">
         <Link
           href="/library"
           className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground"

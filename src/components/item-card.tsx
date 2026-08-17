@@ -1,8 +1,27 @@
 "use client";
 
 import Image from "next/image";
-import { FileText, CheckSquare, Link as LinkIcon, Maximize2 } from "lucide-react";
+import {
+  FileText,
+  CheckSquare,
+  Link as LinkIcon,
+  Maximize2,
+  ExternalLink,
+  Copy,
+  Download,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useItemActions } from "@/lib/use-item-actions";
+import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { ApiItem } from "@/types/item";
 
 export function ItemCard({
@@ -14,21 +33,57 @@ export function ItemCard({
 }) {
   const hasVisual =
     item.type === "image" || (item.type === "link" && !!item.previewImageUrl);
+  const { remove, copyLink, download } = useItemActions();
+
+  const hasDownload = !!(item.blobUrl ?? item.previewImageUrl);
+  const actions: MenuAction[] = [
+    { label: "Open", icon: Maximize2, onClick },
+    ...(item.url
+      ? [{ label: "Copy link", icon: Copy, onClick: () => copyLink(item) }]
+      : []),
+    ...(item.url
+      ? [
+          {
+            label: "Open original",
+            icon: ExternalLink,
+            onClick: () => window.open(item.url!, "_blank", "noreferrer"),
+          },
+        ]
+      : []),
+    ...(hasDownload
+      ? [{ label: "Download", icon: Download, onClick: () => download(item) }]
+      : []),
+    {
+      label: "Delete",
+      icon: Trash2,
+      variant: "destructive",
+      onClick: () => remove(item),
+    },
+  ];
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "group relative block w-full overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        !hasVisual && "glass-panel",
-      )}
-    >
-      {item.type === "image" && item.blobUrl && <ImageCardBody item={item} />}
-      {item.type === "link" && <LinkCardBody item={item} />}
-      {item.type === "note" && <NoteCardBody item={item} />}
-      {item.type === "task" && <TaskCardBody item={item} />}
-    </button>
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <button
+          type="button"
+          onClick={onClick}
+          className={cn(
+            "group relative block w-full overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            !hasVisual && "glass-panel",
+          )}
+        >
+          {item.type === "image" && item.blobUrl && <ImageCardBody item={item} />}
+          {item.type === "link" && <LinkCardBody item={item} />}
+          {item.type === "note" && <NoteCardBody item={item} />}
+          {item.type === "task" && <TaskCardBody item={item} />}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {renderMenuActions(actions.slice(0, -1), ContextMenuItem, ContextMenuShortcut)}
+        <ContextMenuSeparator />
+        {renderMenuActions(actions.slice(-1), ContextMenuItem, ContextMenuShortcut)}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

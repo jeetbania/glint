@@ -10,8 +10,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { ItemCard } from "@/components/item-card";
 import { ItemDetailDialog } from "@/components/item-detail-dialog";
 import { CollectionsRow } from "@/components/collections-row";
@@ -163,16 +165,16 @@ export function LibraryView({
                 <DropdownMenuItem onClick={() => createBlank("note")}>
                   <StickyNote className="size-4" />
                   Note
-                  <kbd className="ml-auto text-[10px] text-muted-foreground">
-                    ⌘⇧N
-                  </kbd>
+                  <DropdownMenuShortcut>
+                    <Kbd>⌘⇧N</Kbd>
+                  </DropdownMenuShortcut>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => createBlank("task")}>
                   <CheckSquare className="size-4" />
                   Task
-                  <kbd className="ml-auto text-[10px] text-muted-foreground">
-                    ⌘⇧T
-                  </kbd>
+                  <DropdownMenuShortcut>
+                    <Kbd>⌘⇧T</Kbd>
+                  </DropdownMenuShortcut>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

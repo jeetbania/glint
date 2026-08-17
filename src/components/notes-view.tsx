@@ -3,12 +3,23 @@
 import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { Folder, Plus, Search, StickyNote, Trash2 } from "lucide-react";
+import { Folder, Plus, Search, StickyNote, Trash2, Pencil, Maximize2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { NoteEditor } from "@/components/note-editor";
 import { TagEditor } from "@/components/tag-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { useCollectionActions } from "@/lib/use-collection-actions";
+import { useItemActions } from "@/lib/use-item-actions";
+import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { groupByDate, formatNoteTimestamp } from "@/lib/date-groups";
 import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
@@ -104,6 +115,8 @@ export function NotesView() {
             count={allNotes.filter((n) => n.collections.some((oc) => oc.slug === c.slug)).length}
             active={folderSlug === c.slug}
             onClick={() => setFolderSlug(c.slug)}
+            collection={c}
+            onDeleted={() => folderSlug === c.slug && setFolderSlug(null)}
           />
         ))}
       </aside>
@@ -112,7 +125,7 @@ export function NotesView() {
         <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4">
           <h1 className="font-heading text-lg font-semibold tracking-heading">Notes</h1>
           <div className="flex items-center gap-1.5">
-            <kbd className="text-[10px] text-muted-foreground">⌘⇧N</kbd>
+            <Kbd>⌘⇧N</Kbd>
             <Button size="icon-sm" variant="outline" onClick={createNote} aria-label="New note">
               <Plus className="size-4" />
             </Button>
@@ -147,26 +160,13 @@ export function NotesView() {
                 {group.label}
               </p>
               {group.items.map((note) => (
-                <button
+                <NoteRow
                   key={note.id}
-                  onClick={() => setSelectedId(note.id)}
-                  className={cn(
-                    "block w-full border-b border-border/40 px-4 py-2.5 text-left transition-colors",
-                    selectedId === note.id ? "bg-foreground/8" : "hover:bg-foreground/4",
-                  )}
-                >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="truncate text-sm font-medium">
-                      {note.title || "New Note"}
-                    </p>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {formatNoteTimestamp(note.updatedAt)}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                    {note.bodyText || "No additional text"}
-                  </p>
-                </button>
+                  note={note}
+                  active={selectedId === note.id}
+                  onSelect={() => setSelectedId(note.id)}
+                  onDeleted={() => selectedId === note.id && setSelectedId(null)}
+                />
               ))}
             </div>
           ))}
@@ -198,31 +198,156 @@ export function NotesView() {
   );
 }
 
+function NoteRow({
+  note,
+  active,
+  onSelect,
+  onDeleted,
+}: {
+  note: ApiItem;
+  active: boolean;
+  onSelect: () => void;
+  onDeleted: () => void;
+}) {
+  const { remove } = useItemActions();
+  const actions: MenuAction[] = [
+    { label: "Open", icon: Maximize2, onClick: onSelect },
+    {
+      label: "Delete",
+      icon: Trash2,
+      variant: "destructive",
+      onClick: async () => {
+        await remove(note);
+        onDeleted();
+      },
+    },
+  ];
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <button
+          onClick={onSelect}
+          className={cn(
+            "block w-full border-b border-border/40 px-4 py-2.5 text-left transition-colors",
+            active ? "bg-foreground/8" : "hover:bg-foreground/4",
+          )}
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="truncate text-sm font-medium">
+              {note.title || "New Note"}
+            </p>
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              {formatNoteTimestamp(note.updatedAt)}
+            </span>
+          </div>
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+            {note.bodyText || "No additional text"}
+          </p>
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {renderMenuActions(actions, ContextMenuItem, ContextMenuShortcut)}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 function FolderRow({
   label,
   icon: Icon,
   count,
   active,
   onClick,
+  collection,
+  onDeleted,
 }: {
   label: string;
   icon: typeof Folder;
   count: number;
   active: boolean;
   onClick: () => void;
+  /** Only real Collections (not the "All Notes" pseudo-folder) can be
+   * renamed or deleted — its absence turns off the context menu. */
+  collection?: { id: string; name: string; slug: string };
+  onDeleted?: () => void;
 }) {
-  return (
+  const { rename, remove } = useCollectionActions();
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draft, setDraft] = useState(label);
+
+  async function submitRename() {
+    setIsRenaming(false);
+    if (!collection || !draft.trim() || draft.trim() === collection.name) {
+      setDraft(label);
+      return;
+    }
+    const ok = await rename(collection.id, collection.slug, draft);
+    if (!ok) setDraft(label);
+  }
+
+  const row = (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
         active ? "bg-foreground/8 font-medium" : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground",
       )}
     >
       <Icon className="size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") submitRename();
+            if (e.key === "Escape") {
+              setDraft(label);
+              setIsRenaming(false);
+            }
+          }}
+          onBlur={submitRename}
+          className="min-w-0 flex-1 rounded bg-foreground/8 px-1 -mx-1 outline-none"
+        />
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+      )}
       <span className="shrink-0 text-xs text-muted-foreground">{count}</span>
     </button>
+  );
+
+  if (!collection) return row;
+
+  const actions: MenuAction[] = [
+    {
+      label: "Rename",
+      icon: Pencil,
+      onClick: () => {
+        setDraft(label);
+        setIsRenaming(true);
+      },
+    },
+    {
+      label: "Delete",
+      icon: Trash2,
+      variant: "destructive",
+      onClick: () => {
+        remove(collection.slug, collection.name);
+        onDeleted?.();
+      },
+    },
+  ];
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>{row}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {renderMenuActions(actions, ContextMenuItem, ContextMenuShortcut)}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

@@ -240,6 +240,12 @@ html[data-tauri-shell] [data-item-detail-header] {
   .gradient-sage {
     background-image: linear-gradient(135deg, #bef264, #4ade80);
   }
+  .gradient-sky {
+    background-image: linear-gradient(135deg, #7dd3fc, #60a5fa);
+  }
+  .gradient-rose {
+    background-image: linear-gradient(135deg, #f472b6, #fb7185);
+  }
 
   /* Pastel-tinted glass — the same flat-glass recipe as .glass-panel
      (blur + saturate + hairline border + soft shadow, no shine overlay)
@@ -373,6 +379,21 @@ html[data-tauri-shell] [data-item-detail-header] {
     );
     transform: translateX(-120%) skewX(-20deg);
     animation: shimmer-sweep 4.5s ease-in-out infinite;
+  }
+
+  /* Figma-style dot grid for the collection canvas — signals "infinite,
+     pannable surface" the same way a blank page doesn't. Dot color rides
+     on --foreground via color-mix so it stays theme-correct automatically
+     instead of needing separate light/dark rules. background-position and
+     background-size are set inline per-frame from the canvas's own
+     pan/zoom state, so the grid genuinely pans and scales with the
+     content instead of just sitting static behind it. */
+  .dot-grid-bg {
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--foreground) 16%, transparent) 1px,
+      transparent 1px
+    );
   }
 }
 
