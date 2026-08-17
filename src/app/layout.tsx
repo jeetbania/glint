@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Instrument_Sans } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { TauriShellAdjustments } from "@/components/tauri-shell-adjustments";
 import "./globals.css";
 
 const instrumentSans = Instrument_Sans({
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
+          <TauriShellAdjustments />
           {children}
           <Toaster />
         </ThemeProvider>

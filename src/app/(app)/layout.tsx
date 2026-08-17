@@ -12,8 +12,12 @@ import { Button } from "@/components/ui/button";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SwrProvider>
-      <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-        <header className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 pt-3">
+      <div data-app-shell className="flex h-screen w-full flex-col overflow-hidden bg-background">
+        <header
+          data-app-header
+          data-tauri-drag-region
+          className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 pt-3"
+        >
           <Link
             href="/library"
             className="flex items-center gap-1.5 font-heading text-sm font-semibold tracking-heading"

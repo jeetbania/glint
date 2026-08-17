@@ -159,6 +159,21 @@
   }
 }
 
+/* Desktop shell (Tauri): the native window itself carries real OS
+   vibrancy (see src-tauri/src/lib.rs), so the page background needs to
+   go transparent to let it show through, and the in-app header needs
+   room for macOS's overlaid traffic-light buttons (titleBarStyle:
+   "Overlay" in tauri.conf.json leaves them floating over the page). */
+html[data-tauri-shell] body {
+  background: transparent;
+}
+html[data-tauri-shell] [data-app-shell] {
+  background: transparent;
+}
+html[data-tauri-shell] [data-app-header] {
+  padding-left: 4.5rem;
+}
+
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the
    backdrop-filter recipe measured off jeetcreates.cc's buttons/tags,
