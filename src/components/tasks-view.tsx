@@ -684,7 +684,7 @@ function TaskDetailPane({
             }}
             placeholder="Untitled"
             className={cn(
-              "h-auto min-w-0 flex-1 border-none px-1 py-1 font-heading text-2xl leading-tight font-semibold tracking-heading shadow-none focus-visible:ring-0 md:text-2xl",
+              "h-auto min-w-0 flex-1 border-none px-3 py-1.5 font-heading text-2xl leading-tight font-semibold tracking-heading shadow-none focus-visible:ring-0 md:text-2xl",
               task.completed && "text-muted-foreground line-through",
             )}
           />

@@ -35,30 +35,39 @@ type CollectionPreview = {
 };
 
 // Colors: a single pastel hue per folder, rendered as translucent
-// frosted glass (blur + partial opacity) rather than an opaque fill —
-// per explicit feedback, not a gradient and not a flat sticker. Hue is
-// assigned by position (golden-angle spacing, ~137.5° apart) rather
-// than hashed from the id, so no two folders can land on the same
-// color regardless of how many exist — and it's the same hue the Notes
-// sidebar uses for this folder's icon (see lib/folder-color.ts), so a
-// given folder reads as one consistent color everywhere it shows up.
+// frosted glass (blur + partial opacity) rather than an opaque fill.
+// Hue is assigned by position (golden-angle spacing, ~137.5° apart)
+// rather than hashed from the id, so no two folders can land on the
+// same color regardless of how many exist — and it's the same hue the
+// Notes sidebar uses for this folder's icon (see lib/folder-color.ts).
+const CARD_ASPECT = 426 / 362.09;
 
-// Fan-out hover animation for the peeking preview images — restored
-// from the pre-Paper-mockup version. Imperative animate() calls on
-// refs (not declarative whileHover props) matching jeetcreates.cc's
-// own Folder.tsx, since the declarative path glitches on first hover.
+// The manila-folder-tab silhouette (from the user's own Paper mockup),
+// used verbatim — the tab cutout at top-left isn't reproducible with a
+// plain rounded rect + overflow-hidden, it needs the actual path. The
+// second <path> in the source (a fully-transparent stroke overlay) is
+// dropped as a no-op.
+const FOLDER_TAB_PATH =
+  "M0.000 23.430C-0.000 17.216 2.468 11.256 6.862 6.862C11.256 2.468 17.216 0.000 23.430 0.000C23.430 0.000 165.072 0.000 165.072 0.000C171.286 0.000 177.246 2.468 181.639 6.862C186.033 11.256 188.502 17.216 188.502 23.430C188.502 32.468 192.092 41.136 198.484 47.527C204.875 53.919 213.543 57.509 222.581 57.509C222.581 57.509 398.303 57.509 398.303 57.509C405.647 57.509 412.690 60.426 417.883 65.619C423.076 70.812 425.993 77.855 425.993 85.199C425.993 85.199 425.993 334.404 425.993 334.404C425.993 341.748 423.076 348.791 417.883 353.984C412.690 359.177 405.647 362.094 398.303 362.094C398.303 362.094 27.690 362.094 27.690 362.094C20.346 362.094 13.303 359.177 8.110 353.984C2.917 348.791 0.000 341.748 0.000 334.404C0.000 334.404 0.000 23.430 0.000 23.430Z";
+
+// Fan-out hover animation for the peeking preview images — imperative
+// animate() calls on refs (not declarative whileHover props), matching
+// jeetcreates.cc's own Folder.tsx, since the declarative path glitches
+// on first hover. Unchanged interaction from the previous pass; only
+// the resting angles were tuned to echo the reference's ±4°/0° tilt.
 const OPEN_SPRING = { type: "spring", stiffness: 260, damping: 22 } as const;
 const CLOSE_SPRING = { type: "spring", stiffness: 300, damping: 26 } as const;
 const REST = [
-  { x: -22, y: 10, rotate: -9 },
-  { x: 0, y: -2, rotate: 0 },
-  { x: 22, y: 10, rotate: 9 },
+  { x: -34, y: 4, rotate: -4 },
+  { x: 0, y: -6, rotate: 0 },
+  { x: 34, y: 4, rotate: 4 },
 ];
 const OPEN_POS = [
-  { x: -38, y: -4, rotate: -15 },
-  { x: 0, y: -18, rotate: 0 },
-  { x: 38, y: -4, rotate: 15 },
+  { x: -46, y: -6, rotate: -10 },
+  { x: 0, y: -20, rotate: 0 },
+  { x: 46, y: -6, rotate: 10 },
 ];
+const IMAGE_Z = [1, 2, 1]; // center paints on top, matching the reference
 
 function FolderTile({
   collection,
@@ -75,10 +84,6 @@ function FolderTile({
   const [draft, setDraft] = useState(collection.name);
   const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Prime Motion's own tracked transform state to match the REST values
-  // already painted via inline `style` below — without this, Motion has
-  // no baseline on the first animate() call (hover), and can spin a
-  // card the "long way around" (360°) instead of a few degrees.
   useEffect(() => {
     imgRefs.current.forEach((el, i) => {
       if (!el) return;
@@ -147,9 +152,9 @@ function FolderTile({
         <div
           onPointerEnter={open}
           onPointerLeave={close}
-          style={{ "--folder-hue": hue } as React.CSSProperties}
+          style={{ "--folder-hue": hue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
           className={cn(
-            "group relative h-60 w-56 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
+            "group relative w-64 shrink-0 overflow-hidden rounded-[18px] shadow-[0_16px_18px_-8px_rgba(0,0,0,0.25),0_4px_6px_-2px_rgba(0,0,0,0.15)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
@@ -160,13 +165,25 @@ function FolderTile({
             className="absolute inset-0 z-0"
           />
 
-          {/* Full-bleed frosted color — the folder itself. */}
-          <div className="folder-card-glass pointer-events-none absolute inset-0 z-0" />
+          {/* Manila-folder-tab silhouette — the folder itself. */}
+          <svg
+            aria-hidden
+            viewBox="0 0 426 362.09"
+            preserveAspectRatio="none"
+            className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+          >
+            <path
+              d={FOLDER_TAB_PATH}
+              style={{
+                fill: "color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) calc(var(--folder-alpha) * 100%), transparent)",
+              }}
+            />
+          </svg>
 
-          {/* Fanned previews, peeking above the top edge on hover —
-              anchored to the upper zone so they read as tucked into the
-              card rather than floating loose. */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[42%] items-center justify-center">
+          {/* Fanned previews, peeking out of the tab — anchored to the
+              upper ~58% so they tuck behind the info panel below, same
+              as the reference. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[58%] items-end justify-center pb-2">
             {collection.previews.length > 0 ? (
               collection.previews.slice(0, 3).map((src, i) => (
                 <div
@@ -174,8 +191,9 @@ function FolderTile({
                   ref={(el) => {
                     imgRefs.current[i] = el;
                   }}
-                  className="absolute size-24 overflow-hidden rounded-xl border border-white/30 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.45)] will-change-transform"
+                  className="absolute h-28 w-24 overflow-hidden rounded-[10px] shadow-[0_3px_5.5px_rgba(0,0,0,0.22),0_1px_2px_rgba(0,0,0,0.13)] will-change-transform"
                   style={{
+                    zIndex: IMAGE_Z[i] ?? 1,
                     transform: `translate(${REST[i]?.x ?? 0}px, ${REST[i]?.y ?? 0}px) rotate(${REST[i]?.rotate ?? 0}deg)`,
                   }}
                 >
@@ -183,14 +201,17 @@ function FolderTile({
                 </div>
               ))
             ) : (
-              <Folder className="size-8 text-white/80" />
+              <Folder className="mb-4 size-8 text-white/80" />
             )}
           </div>
 
-          {/* Bottom scrim + text — sits directly on the glass, same
-              composition as the reference, just less space between this
-              and the peeking images now that the card is shorter. */}
-          <div className="folder-card-scrim pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex h-[62%] flex-col justify-end gap-2 p-3.5">
+          {/* Info panel — a genuinely separate frosted-glass layer (not
+              just a gradient scrim), overlapping the previews' lower
+              edge so they read as tucked behind it. Deliberately kept a
+              fixed dark tint (not the reference's near-white one) so
+              white text stays legible regardless of the site's own
+              light/dark theme — see globals.css. */}
+          <div className="folder-card-info pointer-events-none absolute inset-x-0 bottom-0 top-[32%] z-[2] flex flex-col justify-between rounded-[18px] p-4">
             {isRenaming ? (
               <input
                 autoFocus
@@ -205,16 +226,16 @@ function FolderTile({
                   }
                 }}
                 onBlur={submitRename}
-                className="pointer-events-auto min-w-0 rounded bg-white/15 px-1 -mx-1 font-heading text-lg font-semibold tracking-heading text-white outline-none"
+                className="pointer-events-auto min-w-0 rounded bg-white/15 px-1 -mx-1 font-heading text-xl font-medium tracking-heading text-white outline-none"
               />
             ) : (
-              <p className="truncate font-heading text-lg font-semibold tracking-heading text-white">
+              <p className="truncate font-heading text-xl font-medium tracking-heading text-white">
                 {collection.name}
               </p>
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              <span className="text-base tracking-heading text-white/70">
                 {collection.count} {collection.count === 1 ? "save" : "saves"}
               </span>
               <DropdownMenu>
@@ -223,11 +244,6 @@ function FolderTile({
                     <button
                       type="button"
                       aria-label={`More options for ${collection.name}`}
-                      // Theme-aware translucent circle (same recipe as
-                      // .glass-pill) instead of a hardcoded white one —
-                      // a flat white/90 circle read fine against the old
-                      // light-mode gradient but looked stuck-on and out
-                      // of place in dark mode.
                       className="glass-pill pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full text-foreground opacity-0 transition-opacity hover:brightness-105 group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
@@ -293,7 +309,10 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
       ))}
 
       {creating ? (
-        <div className="glass-panel flex h-60 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
+        <div
+          style={{ aspectRatio: CARD_ASPECT }}
+          className="glass-panel flex w-64 shrink-0 flex-col items-center justify-center gap-2 rounded-[18px] p-3"
+        >
           <input
             autoFocus
             value={draft}
@@ -314,7 +333,8 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="flex h-60 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] border border-dashed border-border/60 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+          style={{ aspectRatio: CARD_ASPECT }}
+          className="flex w-64 shrink-0 flex-col items-center justify-center gap-2 rounded-[18px] border border-dashed border-border/60 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           <Plus className="size-5" />
           New collection

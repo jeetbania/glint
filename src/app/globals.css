@@ -102,12 +102,13 @@
   --glass-shadow: 0 1px 3px rgba(23, 23, 26, 0.12),
     0 8px 24px rgba(23, 23, 26, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 
-  /* Folder-card recipe (see .folder-card-glass) — a single pastel hue
-     per folder, translucent + blurred rather than an opaque fill, so it
-     reads as frosted colored glass instead of a flat sticker. */
-  --folder-l: 80%;
-  --folder-c: 0.12;
-  --folder-alpha: 0.5;
+  /* Folder-card recipe (see the SVG fill in collections-row.tsx) — a
+     single pastel hue per folder, translucent rather than an opaque
+     fill, tuned to the very pale wash of the reference (a light mint at
+     ~55% alpha) rather than a punchier saturated pastel. */
+  --folder-l: 88%;
+  --folder-c: 0.08;
+  --folder-alpha: 0.55;
 }
 
 .dark {
@@ -149,12 +150,12 @@
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
     0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
-  /* Same hue set as light mode, deeper + more opaque so the pastel
+  /* Same hue set as light mode, a bit deeper/richer so the pale wash
      still reads as colorful against the near-black page instead of
      washing out — the "different colours for light and dark mode" the
      flat #2A2A2A frame never had. */
-  --folder-l: 55%;
-  --folder-c: 0.14;
+  --folder-l: 68%;
+  --folder-c: 0.11;
   --folder-alpha: 0.55;
 }
 
@@ -414,35 +415,23 @@ html[data-tauri-shell] [data-item-detail-header] {
     flex: 1;
   }
 
-  /* Folder cards — a single pastel hue per folder (--folder-hue, set
-     inline), translucent + blurred rather than an opaque gradient fill,
-     so it reads as soft frosted color instead of a flat sticker.
-     --folder-l/-c/-alpha hold the light/dark-mode-aware "recipe" (see
-     the :root/.dark tokens above) so the same rule looks airy in light
-     mode and rich (not washed out) in dark mode. White text sits
-     directly on top — the fill stays saturated enough in both themes
-     for that to work without per-theme text-color branching. */
-  .folder-card-glass {
-    background-color: color-mix(
-      in oklch,
-      oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) calc(var(--folder-alpha) * 100%),
-      transparent
-    );
-    backdrop-filter: blur(20px) saturate(1.6);
-    -webkit-backdrop-filter: blur(20px) saturate(1.6);
-    border: 1px solid
-      color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) 55%, transparent);
-  }
-  /* A gentle bottom-up scrim under the title/count text — guarantees
-     legibility no matter which hue a given folder landed on, without
-     needing a separate opaque panel. */
-  .folder-card-scrim {
-    background-image: linear-gradient(
-      to top,
-      rgba(0, 0, 0, 0.32) 0%,
-      rgba(0, 0, 0, 0.12) 55%,
-      transparent 100%
-    );
+  /* Folder cards — the colored fill itself is the manila-folder-tab SVG
+     path in collections-row.tsx (a shape a plain div can't produce);
+     --folder-l/-c/-alpha there hold the light/dark-mode-aware "recipe"
+     (see the :root/.dark tokens above) so one hue looks like a pale
+     wash in light mode and a richer, non-washed-out tone in dark mode.
+
+     This is the SEPARATE frosted info panel that sits on top of the
+     lower portion of that shape, holding the title/count text. Its own
+     tint is deliberately a fixed dark glass (not the folder's hue, and
+     not flipping with the site theme) — white text needs guaranteed
+     contrast, and a panel that got lighter in light mode (matching the
+     reference's near-white glass) would fail exactly the legibility
+     test this exists to solve. */
+  .folder-card-info {
+    background: color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) 20%, rgba(10, 10, 12, 0.72));
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
   }
 
   /* Sliding-pill tabs (ui/tabs.tsx) — ported from transitions.dev's
