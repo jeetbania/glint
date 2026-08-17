@@ -1,3 +1,15 @@
+/** True if `date` falls on today's calendar day (local time) — backs
+ * the Notes sidebar's "Today" smart view. */
+export function isToday(date: string | Date): boolean {
+  const d = new Date(date);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
 /** Apple Notes-style relative date bucketing for a list pane. */
 export function groupByDate<T>(
   items: T[],

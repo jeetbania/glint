@@ -3,7 +3,17 @@
 import { useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { Folder, Plus, Search, StickyNote, Trash2, Pencil, Maximize2 } from "lucide-react";
+import {
+  Folder,
+  Plus,
+  Search,
+  StickyNote,
+  Sun,
+  Trash2,
+  Pencil,
+  Maximize2,
+  MoreHorizontal,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -12,7 +22,14 @@ import { TagEditor } from "@/components/tag-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { useItemActions } from "@/lib/use-item-actions";
+import { hueForIndex, hueSwatch } from "@/lib/folder-color";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,10 +37,16 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { groupByDate, formatNoteTimestamp } from "@/lib/date-groups";
+import { groupByDate, formatNoteTimestamp, isToday } from "@/lib/date-groups";
 import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
+
+/** "all" and "today" are smart views; anything else is a Collection
+ * slug — same three-tier structure as Things' Inbox/Today + custom
+ * Lists, translated into what this app actually has (folders, not
+ * areas/projects). */
+type SidebarView = "all" | "today" | string;
 
 type CollectionPreview = { id: string; name: string; slug: string; count: number };
 
@@ -41,18 +64,23 @@ export function NotesView() {
   );
   const { mutate: globalMutate } = useSWRConfig();
 
-  const [folderSlug, setFolderSlug] = useState<string | null>(null);
+  const [view, setView] = useState<SidebarView>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const collections = collectionsData?.collections ?? [];
 
   const allNotes = useMemo(() => notesData?.items ?? [], [notesData]);
+  const todayNotes = useMemo(
+    () => allNotes.filter((n) => isToday(n.updatedAt)),
+    [allNotes],
+  );
 
   const folderNotes = useMemo(() => {
-    if (!folderSlug) return allNotes;
-    return allNotes.filter((n) => n.collections.some((c) => c.slug === folderSlug));
-  }, [allNotes, folderSlug]);
+    if (view === "all") return allNotes;
+    if (view === "today") return todayNotes;
+    return allNotes.filter((n) => n.collections.some((c) => c.slug === view));
+  }, [allNotes, todayNotes, view]);
 
   const visibleNotes = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -116,8 +144,8 @@ export function NotesView() {
       body: JSON.stringify({ type: "note", title: "" }),
     });
     const { item } = (await res.json()) as { item: ApiItem };
-    if (folderSlug) {
-      const folder = collections.find((c) => c.slug === folderSlug);
+    if (view !== "all" && view !== "today") {
+      const folder = collections.find((c) => c.slug === view);
       if (folder) {
         await fetch(`/api/items/${item.id}`, {
           method: "PATCH",
@@ -134,55 +162,71 @@ export function NotesView() {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/60 px-3 py-4">
-        <div className="flex items-center justify-between px-2 pb-2">
-          <p className="text-xs font-medium text-muted-foreground">Folders</p>
-          <button
-            type="button"
-            onClick={() => setCreatingFolder(true)}
-            aria-label="New folder"
-            className="flex size-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
-          >
-            <Plus className="size-3.5" />
-          </button>
-        </div>
-        <FolderRow
-          label="All Notes"
-          icon={StickyNote}
-          count={allNotes.length}
-          active={folderSlug === null}
-          onClick={() => setFolderSlug(null)}
-        />
-        {collections.map((c) => (
+      <aside className="flex w-52 shrink-0 flex-col gap-3 overflow-y-auto border-r border-border/60 px-3 py-4">
+        <div className="space-y-0.5">
           <FolderRow
-            key={c.id}
-            label={c.name}
-            icon={Folder}
-            count={allNotes.filter((n) => n.collections.some((oc) => oc.slug === c.slug)).length}
-            active={folderSlug === c.slug}
-            onClick={() => setFolderSlug(c.slug)}
-            collection={c}
-            onDeleted={() => folderSlug === c.slug && setFolderSlug(null)}
-            onDropNote={(noteId) => fileNoteIntoFolder(noteId, c)}
+            label="All Notes"
+            icon={StickyNote}
+            count={allNotes.length}
+            active={view === "all"}
+            onClick={() => setView("all")}
           />
-        ))}
-        {creatingFolder && (
-          <input
-            autoFocus
-            value={folderDraft}
-            onChange={(e) => setFolderDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submitCreateFolder();
-              if (e.key === "Escape") {
-                setCreatingFolder(false);
-                setFolderDraft("");
-              }
-            }}
-            onBlur={submitCreateFolder}
-            placeholder="Folder name"
-            className="rounded-lg bg-foreground/8 px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+          <FolderRow
+            label="Today"
+            icon={Sun}
+            iconColor="oklch(70% 0.15 70)"
+            count={todayNotes.length}
+            active={view === "today"}
+            onClick={() => setView("today")}
           />
-        )}
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between px-2 pb-1">
+            <p className="text-xs font-medium text-muted-foreground">Folders</p>
+            <button
+              type="button"
+              onClick={() => setCreatingFolder(true)}
+              aria-label="New folder"
+              className="flex size-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+          <div className="space-y-0.5">
+            {collections.map((c, i) => (
+              <FolderRow
+                key={c.id}
+                label={c.name}
+                icon={Folder}
+                iconColor={hueSwatch(hueForIndex(i))}
+                count={allNotes.filter((n) => n.collections.some((oc) => oc.slug === c.slug)).length}
+                active={view === c.slug}
+                onClick={() => setView(c.slug)}
+                collection={c}
+                onDeleted={() => view === c.slug && setView("all")}
+                onDropNote={(noteId) => fileNoteIntoFolder(noteId, c)}
+              />
+            ))}
+          </div>
+          {creatingFolder && (
+            <input
+              autoFocus
+              value={folderDraft}
+              onChange={(e) => setFolderDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCreateFolder();
+                if (e.key === "Escape") {
+                  setCreatingFolder(false);
+                  setFolderDraft("");
+                }
+              }}
+              onBlur={submitCreateFolder}
+              placeholder="Folder name"
+              className="mt-0.5 w-full rounded-lg bg-foreground/8 px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+            />
+          )}
+        </div>
       </aside>
 
       <div className="flex w-80 shrink-0 flex-col border-r border-border/60">
@@ -325,6 +369,7 @@ function NoteRow({
 function FolderRow({
   label,
   icon: Icon,
+  iconColor,
   count,
   active,
   onClick,
@@ -334,6 +379,11 @@ function FolderRow({
 }: {
   label: string;
   icon: typeof Folder;
+  /** An oklch()/color string — Things-style colorful icons instead of
+   * flat gray ones. Undefined falls back to the muted-foreground
+   * default (used for "All Notes", which isn't tied to any one folder's
+   * color). */
+  iconColor?: string;
   count: number;
   active: boolean;
   onClick: () => void;
@@ -381,7 +431,10 @@ function FolderRow({
         isDropTarget && "bg-primary/10 ring-2 ring-primary",
       )}
     >
-      <Icon className="size-3.5 shrink-0" />
+      <Icon
+        className="size-3.5 shrink-0"
+        style={iconColor ? { color: iconColor } : undefined}
+      />
       {isRenaming ? (
         <input
           autoFocus
@@ -402,7 +455,23 @@ function FolderRow({
       ) : (
         <span className="min-w-0 flex-1 truncate">{label}</span>
       )}
-      <span className="shrink-0 text-xs text-muted-foreground">{count}</span>
+      {count > 0 ? (
+        <span
+          className="shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums"
+          style={
+            iconColor
+              ? {
+                  backgroundColor: `color-mix(in oklch, ${iconColor} 16%, transparent)`,
+                  color: iconColor,
+                }
+              : undefined
+          }
+        >
+          {count}
+        </span>
+      ) : (
+        <span className="shrink-0 text-xs text-muted-foreground">0</span>
+      )}
     </button>
   );
 
@@ -448,6 +517,7 @@ function NoteDetailPane({
   onSaved: () => void;
 }) {
   const { mutate: globalMutate } = useSWRConfig();
+  const { remove } = useItemActions();
   const [title, setTitle] = useState(note.title ?? "");
 
   const saveTitle = useDebouncedCallback(async (value: string) => {
@@ -491,8 +561,7 @@ function NoteDetailPane({
   }
 
   async function handleDelete() {
-    await fetch(`/api/items/${note.id}`, { method: "DELETE" });
-    toast.success("Deleted");
+    await remove(note);
     onDeleted();
   }
 
@@ -502,15 +571,19 @@ function NoteDetailPane({
         <p className="text-xs text-muted-foreground">
           Edited {formatNoteTimestamp(note.updatedAt)}
         </p>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={handleDelete}
-          className="text-destructive hover:text-destructive"
-          aria-label="Delete note"
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="icon-sm" aria-label="Note options" />}
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+              <Trash2 className="size-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">

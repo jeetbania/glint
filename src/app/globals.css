@@ -101,6 +101,15 @@
   --glass-border: rgba(23, 23, 26, 0.08);
   --glass-shadow: 0 1px 3px rgba(23, 23, 26, 0.12),
     0 8px 24px rgba(23, 23, 26, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+
+  /* Folder-card gradient recipe (see .folder-card-gradient) — airy,
+     high-lightness pastels, matching jeetcreates.cc's own project
+     cards directly (measured off the reference: soft two-tone diagonal
+     washes, white text sits straight on top of them, no separate dark
+     info panel). */
+  --folder-l1: 90%;
+  --folder-l2: 80%;
+  --folder-c: 0.085;
 }
 
 .dark {
@@ -141,6 +150,13 @@
   --glass-border: rgba(255, 255, 255, 0.14);
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
     0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* Same two hues as light mode, richer/deeper so they don't wash out
+     against the near-black page — this is the "different colours for
+     light and dark mode" the flat #2A2A2A frame never had. */
+  --folder-l1: 64%;
+  --folder-l2: 52%;
+  --folder-c: 0.13;
 }
 
 @layer base {
@@ -399,28 +415,36 @@ html[data-tauri-shell] [data-item-detail-header] {
     flex: 1;
   }
 
-  /* Glassy pastel folder cards — one hue per folder (set inline via
-     --folder-hue), mixed into the theme's own glass tokens with
-     color-mix rather than hardcoded light/dark branches. That mixing is
-     what makes a single recipe correct in both themes automatically:
-     in dark mode --glass-bg-strong is near-black, so the mix reads as a
-     saturated dark tinted glass; in light mode it's a warm off-white,
-     so the exact same rule reads as a soft light tinted glass. */
-  .folder-card-swatch {
+  /* Folder cards — a full-bleed diagonal two-tone pastel gradient
+     (matching jeetcreates.cc's own project cards directly, not a
+     re-invention), not a small swatch + separate dark panel. Two hues
+     per folder (--folder-hue-a/-b, set inline) so each card reads as
+     its own soft duotone instead of a flat wash; --folder-l1/-l2/-c
+     hold the light/dark-mode-aware lightness+chroma "recipe" (see the
+     :root/.dark tokens above) so the exact same gradient rule looks
+     airy in light mode and rich (not washed out) in dark mode. White
+     text sits directly on top, same as the reference — the gradient
+     itself carries enough contrast in both themes for that to work
+     without per-theme text-color branching. */
+  .folder-card-gradient {
     background-image: linear-gradient(
-      165deg,
-      color-mix(in oklch, oklch(82% 0.15 var(--folder-hue)) 88%, var(--background)) 0%,
-      color-mix(in oklch, oklch(74% 0.17 var(--folder-hue)) 88%, var(--background)) 100%
+      135deg,
+      oklch(var(--folder-l1) var(--folder-c) var(--folder-hue-a)) 0%,
+      oklch(var(--folder-l2) var(--folder-c) var(--folder-hue-b)) 100%
     );
-    backdrop-filter: blur(18px) saturate(1.5);
-    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(12px) saturate(1.3);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3);
   }
-  .folder-card-panel {
-    background: color-mix(in oklch, oklch(72% 0.16 var(--folder-hue)) 22%, var(--glass-bg-strong));
-    backdrop-filter: blur(20px) saturate(1.6);
-    -webkit-backdrop-filter: blur(20px) saturate(1.6);
-    border-top: 1px solid
-      color-mix(in oklch, oklch(78% 0.16 var(--folder-hue)) 45%, var(--glass-border));
+  /* A gentle bottom-up scrim under the title/count text — guarantees
+     legibility no matter which two hues a given folder landed on,
+     without needing a separate opaque panel. */
+  .folder-card-scrim {
+    background-image: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.32) 0%,
+      rgba(0, 0, 0, 0.12) 55%,
+      transparent 100%
+    );
   }
 
   /* Sliding-pill tabs (ui/tabs.tsx) — ported from transitions.dev's

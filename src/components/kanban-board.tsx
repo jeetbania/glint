@@ -96,8 +96,6 @@ export function KanbanBoard() {
     if (movingIntoDone) {
       play("success");
       if (dropEvent) triggerConfetti(dropEvent.clientX, dropEvent.clientY);
-    } else {
-      play("select");
     }
 
     await fetch(`/api/kanban/cards/${card.id}`, {
@@ -116,7 +114,6 @@ export function KanbanBoard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ columnId, title: title.trim() }),
     });
-    play("success");
     void mutate();
   }
 

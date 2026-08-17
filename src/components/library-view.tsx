@@ -187,6 +187,7 @@ export function LibraryView({
                 key={item.id}
                 item={item}
                 onClick={() => setSelectedItemId(item.id)}
+                onColorClick={setColor}
               />
             ))}
           </Masonry>

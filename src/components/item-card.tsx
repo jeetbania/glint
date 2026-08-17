@@ -27,9 +27,13 @@ import type { ApiItem } from "@/types/item";
 export function ItemCard({
   item,
   onClick,
+  onColorClick,
 }: {
   item: ApiItem;
   onClick: () => void;
+  /** Clicking the color dot on an image card filters the Library by
+   * that image's dominant color family instead of opening the item. */
+  onColorClick?: (colorFamily: string) => void;
 }) {
   const hasVisual =
     item.type === "image" || (item.type === "link" && !!item.previewImageUrl);
@@ -72,7 +76,9 @@ export function ItemCard({
             !hasVisual && "glass-panel",
           )}
         >
-          {item.type === "image" && item.blobUrl && <ImageCardBody item={item} />}
+          {item.type === "image" && item.blobUrl && (
+            <ImageCardBody item={item} onColorClick={onColorClick} />
+          )}
           {item.type === "link" && <LinkCardBody item={item} />}
           {item.type === "note" && <NoteCardBody item={item} />}
           {item.type === "task" && <TaskCardBody item={item} />}
@@ -132,7 +138,13 @@ function TypeIcon({
   );
 }
 
-function ImageCardBody({ item }: { item: ApiItem }) {
+function ImageCardBody({
+  item,
+  onColorClick,
+}: {
+  item: ApiItem;
+  onColorClick?: (colorFamily: string) => void;
+}) {
   const ratio =
     item.width && item.height ? item.width / item.height : 4 / 3;
 
@@ -146,8 +158,50 @@ function ImageCardBody({ item }: { item: ApiItem }) {
         className="object-cover"
         unoptimized
       />
-      <HoverControls />
+      <ColorDot item={item} onColorClick={onColorClick} />
+      <HoverControls showSelect={false} />
     </div>
+  );
+}
+
+/** Shows the image's own extracted dominant color as a small always-on
+ * swatch — both a quick visual cue (scanning a grid, colors read at a
+ * glance) and a one-click shortcut into the existing color filter
+ * (FilterMenu) for that color family, without opening the dropdown.
+ * A <span role="button"> rather than a real <button>: this renders
+ * inside ItemCard's own outer <button>, and a nested <button> is
+ * invalid HTML (see collections-row.tsx for the same footgun). */
+function ColorDot({
+  item,
+  onColorClick,
+}: {
+  item: ApiItem;
+  onColorClick?: (colorFamily: string) => void;
+}) {
+  const hex = item.dominantColors?.[0]?.hex;
+  const family = item.colorFamily?.[0];
+  if (!hex || !family || !onColorClick) return null;
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={`Filter by ${family}`}
+      title={`Filter by ${family}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onColorClick(family);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          onColorClick(family);
+        }
+      }}
+      className="absolute left-2 top-2 size-4 cursor-pointer rounded-full border-2 border-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.4)] transition-transform hover:scale-125"
+      style={{ backgroundColor: hex }}
+    />
   );
 }
 

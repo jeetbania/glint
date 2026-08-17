@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { useSound } from "@/lib/use-sound";
 import type { ApiItem } from "@/types/item";
 
 /** Delete/copy-link/download for a saved item — the same three actions
@@ -8,6 +9,7 @@ import type { ApiItem } from "@/types/item";
  * a link. */
 export function useItemActions() {
   const { mutate } = useSWRConfig();
+  const play = useSound();
 
   const refreshLibrary = () =>
     mutate((key) => typeof key === "string" && key.startsWith("/api/items"));
@@ -18,6 +20,7 @@ export function useItemActions() {
       toast.error("Couldn't delete that item");
       return;
     }
+    play("delete");
     toast.success("Deleted");
     void refreshLibrary();
   }

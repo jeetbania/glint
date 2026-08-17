@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useSound } from "@/lib/use-sound";
 
 // The sliding-pill segmented control (t-tabs-dev's "16-tabs-sliding"
 // transition, ported to React refs instead of raw DOM query wiring) —
@@ -30,7 +29,6 @@ export function Tabs({
    * a dialog header), where a second blur layer would look muddy. */
   glass?: boolean;
 }) {
-  const play = useSound();
   const barRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
   const tabRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -102,7 +100,6 @@ export function Tabs({
               ref={refCallback}
               role="tab"
               aria-selected={selected}
-              onClick={() => !selected && play("select")}
               className={tabClassName}
             >
               {item.label}
@@ -117,10 +114,7 @@ export function Tabs({
             type="button"
             aria-selected={selected}
             onClick={() => {
-              if (!selected) {
-                play("select");
-                onChange?.(item.value);
-              }
+              if (!selected) onChange?.(item.value);
             }}
             className={tabClassName}
           >

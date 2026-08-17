@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { animate } from "motion";
+import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
+import { hueForIndex as sharedHueForIndex } from "@/lib/folder-color";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
   DropdownMenu,
@@ -31,22 +34,39 @@ type CollectionPreview = {
   previews: string[];
 };
 
-// Layout is ported from the user's own Paper mockup (the flap-overlap
-// composition), but the color recipe is ours: glassy, vibrant pastel,
-// theme-aware, and — per explicit feedback — never repeating between
-// folders. Hue is assigned by position (golden-angle spacing, ~137.5°
-// apart) rather than hashed from the id: a hash can coincidentally
-// collide or cluster for a small set of folders, while golden-angle
-// spacing guarantees maximum, even separation around the color wheel
-// no matter how many folders exist. The actual color values live in
-// globals.css (.folder-card-swatch / .folder-card-panel) as
-// color-mix() recipes against the theme's own tokens, so one hue
-// reads correctly as a pastel in both light and dark mode without any
-// manual branching here.
-const GOLDEN_ANGLE = 137.508;
-function hueForIndex(index: number): number {
-  return Math.round((index * GOLDEN_ANGLE) % 360);
+// Colors: a full-bleed diagonal two-tone pastel gradient per folder,
+// ported directly off jeetcreates.cc's own project cards (not the flat
+// dark #2A2A2A/#1C1C1C frame from the earlier Paper-mockup pass — that
+// was only ever meant to show the *layout*, not the final colors).
+// Both hues are assigned by position (golden-angle spacing, ~137.5°
+// apart) rather than hashed from the id, so no two folders can land on
+// the same color regardless of how many exist. The actual
+// lightness/chroma differ between light and dark mode (see the
+// --folder-l1/-l2/-c tokens in globals.css) so the same hue pair reads
+// as an airy pastel in light mode and a richer, non-washed-out tone in
+// dark mode — "different colours for both modes," not one recipe
+// stretched across both.
+function hueForIndex(index: number): { a: number; b: number } {
+  const a = sharedHueForIndex(index);
+  return { a, b: Math.round((a + 45) % 360) };
 }
+
+// Fan-out hover animation for the peeking preview images — restored
+// from the pre-Paper-mockup version. Imperative animate() calls on
+// refs (not declarative whileHover props) matching jeetcreates.cc's
+// own Folder.tsx, since the declarative path glitches on first hover.
+const OPEN_SPRING = { type: "spring", stiffness: 260, damping: 22 } as const;
+const CLOSE_SPRING = { type: "spring", stiffness: 300, damping: 26 } as const;
+const REST = [
+  { x: -22, y: 10, rotate: -9 },
+  { x: 0, y: -2, rotate: 0 },
+  { x: 22, y: 10, rotate: 9 },
+];
+const OPEN_POS = [
+  { x: -38, y: -4, rotate: -15 },
+  { x: 0, y: -18, rotate: 0 },
+  { x: 38, y: -4, rotate: 15 },
+];
 
 function FolderTile({
   collection,
@@ -54,13 +74,41 @@ function FolderTile({
   active,
 }: {
   collection: CollectionPreview;
-  hue: number;
+  hue: { a: number; b: number };
   active: boolean;
 }) {
   const { rename, remove } = useCollectionActions();
   const router = useRouter();
   const [isRenaming, setIsRenaming] = useState(false);
   const [draft, setDraft] = useState(collection.name);
+  const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Prime Motion's own tracked transform state to match the REST values
+  // already painted via inline `style` below — without this, Motion has
+  // no baseline on the first animate() call (hover), and can spin a
+  // card the "long way around" (360°) instead of a few degrees.
+  useEffect(() => {
+    imgRefs.current.forEach((el, i) => {
+      if (!el) return;
+      const pos = REST[i] ?? REST[REST.length - 1];
+      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, { duration: 0 });
+    });
+  }, []);
+
+  function open() {
+    imgRefs.current.forEach((el, i) => {
+      if (!el) return;
+      const pos = OPEN_POS[i] ?? OPEN_POS[OPEN_POS.length - 1];
+      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, OPEN_SPRING);
+    });
+  }
+  function close() {
+    imgRefs.current.forEach((el, i) => {
+      if (!el) return;
+      const pos = REST[i] ?? REST[REST.length - 1];
+      animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, CLOSE_SPRING);
+    });
+  }
 
   async function submitRename() {
     setIsRenaming(false);
@@ -105,9 +153,16 @@ function FolderTile({
             pointer-events-none by default so clicks fall through to it,
             except the couple of controls that opt back in explicitly. */}
         <div
-          style={{ "--folder-hue": hue } as React.CSSProperties}
+          onPointerEnter={open}
+          onPointerLeave={close}
+          style={
+            {
+              "--folder-hue-a": hue.a,
+              "--folder-hue-b": hue.b,
+            } as React.CSSProperties
+          }
           className={cn(
-            "group relative size-60 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 hover:scale-[1.02]",
+            "group relative h-72 w-56 shrink-0 overflow-hidden rounded-[22px] shadow-[0_10px_28px_-12px_rgba(0,0,0,0.4)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
@@ -118,20 +173,36 @@ function FolderTile({
             className="absolute inset-0 z-0"
           />
 
-          {/* Top swatch — a unique pastel hue per folder (see
-              hueForIndex), rendered as glass (blur + translucent color)
-              rather than a flat fill. */}
-          <div
-            aria-hidden
-            className="folder-card-swatch pointer-events-none absolute left-1.5 top-1.5 z-0 h-[110px] w-57 rounded-t-[15px]"
-          />
+          {/* Full-bleed gradient — the folder itself. */}
+          <div className="folder-card-gradient pointer-events-none absolute inset-0 z-0" />
 
-          {/* Info panel — deliberately overlaps the swatch's bottom edge
-              (top-24 vs. the swatch's own 6px+110px=116px reach) so it
-              reads as a flap sitting over a folder's pocket. Same hue as
-              the swatch, just mixed into the theme's own glass token at
-              lower strength for contrast against the title/count text. */}
-          <div className="folder-card-panel pointer-events-none absolute left-1.5 top-24 z-[1] flex h-34.5 w-57.25 flex-col justify-between rounded-[14px] px-3.5 py-2.5">
+          {/* Fanned previews, peeking above the top edge on hover —
+              anchored to the upper ~45% so they read as tucked into the
+              card rather than floating loose. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[46%] items-center justify-center">
+            {collection.previews.length > 0 ? (
+              collection.previews.slice(0, 3).map((src, i) => (
+                <div
+                  key={i}
+                  ref={(el) => {
+                    imgRefs.current[i] = el;
+                  }}
+                  className="absolute size-24 overflow-hidden rounded-xl border border-white/30 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.45)] will-change-transform"
+                  style={{
+                    transform: `translate(${REST[i]?.x ?? 0}px, ${REST[i]?.y ?? 0}px) rotate(${REST[i]?.rotate ?? 0}deg)`,
+                  }}
+                >
+                  <Image src={src} alt="" fill className="object-cover" unoptimized />
+                </div>
+              ))
+            ) : (
+              <Folder className="size-8 text-white/80" />
+            )}
+          </div>
+
+          {/* Bottom scrim + text — sits directly on the gradient, same
+              as the reference, rather than a separate opaque panel. */}
+          <div className="folder-card-scrim pointer-events-none absolute inset-x-0 bottom-0 z-[2] flex h-[58%] flex-col justify-end gap-3 p-4">
             {isRenaming ? (
               <input
                 autoFocus
@@ -146,29 +217,29 @@ function FolderTile({
                   }
                 }}
                 onBlur={submitRename}
-                className="pointer-events-auto min-w-0 rounded bg-foreground/10 px-1 -mx-1 font-heading text-base font-medium tracking-heading text-foreground outline-none"
+                className="pointer-events-auto min-w-0 rounded bg-white/15 px-1 -mx-1 font-heading text-lg font-semibold tracking-heading text-white outline-none"
               />
             ) : (
-              <p className="truncate font-heading text-base font-medium tracking-heading text-foreground">
+              <p className="truncate font-heading text-lg font-semibold tracking-heading text-white">
                 {collection.name}
               </p>
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[13px] tracking-heading text-muted-foreground">
+              <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
                 {collection.count} {collection.count === 1 ? "save" : "saves"}
-              </p>
+              </span>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <button
                       type="button"
                       aria-label={`More options for ${collection.name}`}
-                      className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100 data-popup-open:opacity-100"
+                      className="pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full bg-white/90 text-foreground opacity-0 shadow-sm transition-opacity hover:bg-white group-hover:opacity-100 data-popup-open:opacity-100"
                     />
                   }
                 >
-                  <MoreHorizontal className="size-3.5" />
+                  <MoreHorizontal className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   {renderMenuActions(actions, DropdownMenuItem, DropdownMenuShortcut)}
@@ -229,7 +300,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
       ))}
 
       {creating ? (
-        <div className="glass-panel flex size-60 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
+        <div className="glass-panel flex h-72 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] p-3">
           <input
             autoFocus
             value={draft}
@@ -250,7 +321,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="glass-panel flex size-60 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] text-sm text-muted-foreground transition-all hover:brightness-105"
+          className="flex h-72 w-56 shrink-0 flex-col items-center justify-center gap-2 rounded-[22px] border border-dashed border-border/60 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
         >
           <Plus className="size-5" />
           New collection

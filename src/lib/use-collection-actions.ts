@@ -1,11 +1,13 @@
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import { useSound } from "@/lib/use-sound";
 
 /** Rename/delete for a Collection, shared between every surface that
  * shows one (the Library folder row, the Notes sidebar's folder list) so
  * the fetch calls, cache invalidation, and toasts only exist once. */
 export function useCollectionActions() {
   const { mutate } = useSWRConfig();
+  const play = useSound();
 
   async function rename(id: string, slug: string, name: string) {
     const trimmed = name.trim();
@@ -29,6 +31,7 @@ export function useCollectionActions() {
       toast.error("Couldn't delete that folder");
       return;
     }
+    play("delete");
     toast.success(`Deleted "${name}"`);
     void mutate("/api/collections");
   }
