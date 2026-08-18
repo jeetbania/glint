@@ -94,10 +94,11 @@
      overlay is what real frosted glass looks like. Two tiers:
      --glass-bg (small accents — buttons, pills, badges) stays
      translucent; --glass-bg-strong (structural surfaces — the app shell,
-     dialogs, cards) is mostly-opaque so large surfaces read as grounded
-     native panels, not see-through glass everywhere. */
+     dialogs, cards) is the macOS-vibrancy recipe (pure white, 85%
+     opacity, blurred) rather than a bespoke off-white, so it reads as
+     the same glass material macOS itself uses. */
   --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(251, 250, 247, 0.9);
+  --glass-bg-strong: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(23, 23, 26, 0.08);
   --glass-shadow: 0 1px 3px rgba(23, 23, 26, 0.12),
     0 8px 24px rgba(23, 23, 26, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
@@ -202,14 +203,14 @@ html[data-tauri-shell] [data-app-header] {
   padding-left: 4.5rem;
 }
 /* The item-detail lightbox is a full-viewport portal outside the app
-   shell, so it needs the same traffic-light clearance as the header —
-   left clearance so the close button doesn't sit under the traffic
-   lights horizontally, AND extra top clearance (beyond the row's own
-   py-3) so it sits cleanly below them vertically too, rather than
-   assuming the row's default padding happens to line up. */
+   shell (unlike data-app-header, it has no data-app-frame `p-2` inset
+   to compensate for), so it only needs the same LEFT clearance as the
+   header so the close button doesn't sit under the traffic lights —
+   its own py-3 already lines up vertically with them on its own, same
+   as data-app-header's does. An earlier extra `padding-top` here was
+   double-counting that clearance and pushed the button too far down. */
 html[data-tauri-shell] [data-item-detail-header] {
   padding-left: 4.5rem;
-  padding-top: 1.75rem;
 }
 
 /* ---------------------------------------------------------------------
@@ -433,12 +434,17 @@ html[data-tauri-shell] [data-item-detail-header] {
      "this folder's color, just deep enough for white text," matching a
      tinted-glass look rather than a black scrim. Deliberately NOT
      flipping with the site theme — white text needs guaranteed contrast
-     regardless of light/dark mode. */
+     regardless of light/dark mode.
+     Mixed with `transparent` (not a solid color) so the overall alpha
+     stays low enough for the backdrop-filter blur to actually read as
+     glass — mixing two effectively-opaque colors earlier pushed this to
+     ~90% opaque, which flattened it into a solid card with no visible
+     blur at all. */
   .folder-card-info {
     background: color-mix(
       in oklch,
-      oklch(calc(var(--folder-l) * 0.45) calc(var(--folder-c) * 1.3) var(--folder-hue)) 78%,
-      rgba(10, 10, 14, 0.55)
+      oklch(calc(var(--folder-l) * 0.45) calc(var(--folder-c) * 1.3) var(--folder-hue)) 65%,
+      transparent
     );
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);

@@ -51,8 +51,12 @@ export function CommandPalette() {
   const { resolvedTheme, setTheme } = useTheme();
   const { mutate: globalMutate } = useSWRConfig();
 
+  // Visuals only (images/links, same default as the Library grid) — a
+  // plain unfiltered "recent" pull was dominated by bare tasks/notes,
+  // which have no thumbnail and rendered as a row of generic "TASK"
+  // placeholder boxes instead of anything worth glancing at.
   const { data } = useSWR<{ items: ApiItem[] }>(
-    open ? "/api/items?limit=6" : null,
+    open ? "/api/items?type=image,link&limit=6" : null,
   );
   const recent = data?.items ?? [];
 
@@ -225,7 +229,7 @@ export function CommandPalette() {
                         type="button"
                         onClick={() => {
                           setOpen(false);
-                          router.push("/library");
+                          router.push(`/library?item=${r.id}`);
                         }}
                         className="relative size-14 shrink-0 overflow-hidden rounded-lg border border-white/10"
                       >

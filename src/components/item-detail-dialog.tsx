@@ -145,17 +145,20 @@ function ItemDetailContent({
       onClick={closeOnEmptyClick(onClose)}
     >
       {/* Background is the image itself — zoomed, blurred, and darkened —
-          rather than a color-extraction glow, per the reference. */}
+          rather than a color-extraction glow, per the reference. Capped
+          at a 60% dark overlay at most (was stacking a mostly-opaque
+          image against the container's own solid black, then piling an
+          up-to-80% gradient on top of that — far darker than intended). */}
       {bgImage ? (
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <Image
             src={bgImage}
             alt=""
             fill
-            className="scale-110 object-cover opacity-50 blur-3xl"
+            className="scale-110 object-cover opacity-80 blur-3xl"
             unoptimized
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/60 to-black/80" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/60" />
         </div>
       ) : (
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-black" />
@@ -203,7 +206,14 @@ function ItemDetailContent({
           <MainVisual item={item} zoom={zoom} onNoteUpdate={saveNote} />
         </div>
 
-        <aside className="glass-panel hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
+        {/* Scoped `dark` — the lightbox's backdrop is always black
+            regardless of the site's own light/dark setting, so the
+            sidebar always needs the dark glass recipe (and dark-mode
+            text/input colors) to avoid a bright white panel sticking
+            out against it. `.dark` here is a plain class selector in
+            globals.css, not `html.dark`-scoped, so nesting it on this
+            one subtree re-themes just the sidebar. */}
+        <aside className="glass-panel dark hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
           <TiltThumbnail item={item} />
 
           <div className="space-y-1.5">

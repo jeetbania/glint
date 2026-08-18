@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Masonry from "react-masonry-css";
 import useSWR, { useSWRConfig } from "swr";
 import { Search, Plus, StickyNote, CheckSquare } from "lucide-react";
@@ -39,6 +39,7 @@ export function LibraryView({
   fixedType,
   initialTag = null,
   initialColor = null,
+  initialItemId = null,
   showCollections = false,
   showTypeFilters = true,
   emptyMessage = "Nothing here yet. Paste an image or link anywhere to save it.",
@@ -46,6 +47,7 @@ export function LibraryView({
   fixedType?: ItemType;
   initialTag?: string | null;
   initialColor?: string | null;
+  initialItemId?: string | null;
   showCollections?: boolean;
   showTypeFilters?: boolean;
   emptyMessage?: string;
@@ -57,7 +59,16 @@ export function LibraryView({
   const [color, setColor] = useState<string | null>(initialColor);
   const [sort, setSort] = useState<SortValue>("recent-desc");
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(initialItemId);
+  // The command palette's "Recent" row deep-links here via ?item=<id>.
+  // Navigating there while already on /library is a client-side
+  // transition that doesn't remount this component, so the useState
+  // initializer above only fires the very first time — this effect
+  // catches the case where initialItemId changes on an already-mounted
+  // instance instead.
+  useEffect(() => {
+    if (initialItemId) setSelectedItemId(initialItemId);
+  }, [initialItemId]);
   const { mutate: globalMutate } = useSWRConfig();
 
   async function createBlank(kind: "note" | "task") {

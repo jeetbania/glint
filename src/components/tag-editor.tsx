@@ -89,7 +89,14 @@ export function TagEditor({
             onChange(tags.slice(0, -1));
           }
         }}
-        onBlur={() => commit(draft)}
+        onBlur={() => {
+          // commit() early-returns for an empty draft (nothing to add)
+          // before it reaches its own setIsOpen(false) — closing here
+          // unconditionally is what actually dismisses the dropdown
+          // when clicking away without having typed anything.
+          commit(draft);
+          setIsOpen(false);
+        }}
         placeholder="Add tag…"
         className="h-7 w-28 border-dashed text-sm"
       />
