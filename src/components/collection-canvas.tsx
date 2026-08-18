@@ -1305,7 +1305,13 @@ export function CollectionCanvas({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const toastId = toast.loading(`Adding ${file.name || "image"}…`);
+    // Cancelable via the toast's own Cancel button, same as the paste/drop
+    // capture path (use-capture-ingest.ts) — aborting the upload rejects
+    // the surrounding Promise.all, which the catch below already handles.
+    const controller = new AbortController();
+    const toastId = toast.loading(`Adding ${file.name || "image"}…`, {
+      cancel: { label: "Cancel", onClick: () => controller.abort() },
+    });
     try {
       const [colors, dims, blob] = await Promise.all([
         extractImageColors(file),
@@ -1313,6 +1319,7 @@ export function CollectionCanvas({
         upload(file.name || `canvas-${Date.now()}.png`, file, {
           access: "public",
           handleUploadUrl: "/api/blob/upload-token",
+          abortSignal: controller.signal,
         }),
       ]);
 
@@ -1354,6 +1361,10 @@ export function CollectionCanvas({
       await mutate(`/api/collections/${collectionSlug}`);
       toast.success("Image added", { id: toastId });
     } catch (error) {
+      if (controller.signal.aborted) {
+        toast("Upload canceled", { id: toastId });
+        return;
+      }
       console.error(error);
       toast.error("Couldn't add image", { id: toastId });
     }
@@ -1614,11 +1625,6 @@ export function CollectionCanvas({
 
       <div
         ref={viewportRef}
-        // Lenis's own escape hatch (smooth-scroll-provider.tsx wraps
-        // [data-app-main]) — without this, Lenis's wheel listener would
-        // intercept scroll gestures over the canvas before onWheel below
-        // ever got them, breaking pan/zoom entirely.
-        data-lenis-prevent
         className={cn(
           "dot-grid-bg h-full w-full touch-none",
           spaceHeld ? "cursor-grab active:cursor-grabbing" : "cursor-default",

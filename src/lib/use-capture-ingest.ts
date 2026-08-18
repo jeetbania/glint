@@ -55,7 +55,14 @@ export function useCaptureIngest() {
 
   const ingestImage = useCallback(
     async (file: File) => {
-      const toastId = toast.loading(`Saving ${file.name || "image"}…`);
+      // Cancelable via the toast's own Cancel button — one AbortController
+      // shared by the blob upload and the follow-up /api/items POST, so
+      // hitting Cancel mid-upload actually stops the network request
+      // instead of just hiding the toast while the upload keeps running.
+      const controller = new AbortController();
+      const toastId = toast.loading(`Saving ${file.name || "image"}…`, {
+        cancel: { label: "Cancel", onClick: () => controller.abort() },
+      });
       try {
         const [colors, dims, blob] = await Promise.all([
           extractImageColors(file),
@@ -63,6 +70,7 @@ export function useCaptureIngest() {
           upload(file.name || `pasted-${Date.now()}.png`, file, {
             access: "public",
             handleUploadUrl: "/api/blob/upload-token",
+            abortSignal: controller.signal,
           }),
         ]);
 
@@ -80,11 +88,16 @@ export function useCaptureIngest() {
             dominantColors: colors?.dominantColors ?? [],
             colorFamily: colors?.colorFamily ?? [],
           }),
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed to save image");
         refreshLibrary();
         toast.success("Image saved", { id: toastId });
       } catch (error) {
+        if (controller.signal.aborted) {
+          toast("Upload canceled", { id: toastId });
+          return;
+        }
         console.error(error);
         toast.error("Couldn't save image", { id: toastId });
       }
@@ -95,7 +108,10 @@ export function useCaptureIngest() {
   const ingestText = useCallback(
     async (text: string) => {
       const url = asUrl(text);
-      const toastId = toast.loading(url ? "Saving link…" : "Saving note…");
+      const controller = new AbortController();
+      const toastId = toast.loading(url ? "Saving link…" : "Saving note…", {
+        cancel: { label: "Cancel", onClick: () => controller.abort() },
+      });
       try {
         const res = await fetch("/api/items", {
           method: "POST",
@@ -103,11 +119,16 @@ export function useCaptureIngest() {
           body: JSON.stringify(
             url ? { type: "link", url } : { type: "note", bodyText: text },
           ),
+          signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed to save");
         refreshLibrary();
         toast.success(url ? "Link saved" : "Note saved", { id: toastId });
       } catch (error) {
+        if (controller.signal.aborted) {
+          toast("Save canceled", { id: toastId });
+          return;
+        }
         console.error(error);
         toast.error("Couldn't save", { id: toastId });
       }

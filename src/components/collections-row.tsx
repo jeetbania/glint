@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { FOLDER_HUE_PALETTE, type FolderHue } from "@/lib/folder-color";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
+import { GhostBar } from "@/components/ui/ghost-card";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,7 +35,14 @@ type CollectionPreview = {
   count: number;
   colorHue: number;
   previews: string[];
+  hasNotesOrTasks: boolean;
 };
+
+// A folder's fanned preview slots — either a real image thumbnail or a
+// flat "ghost card" standing in for a note/task (which never has a
+// thumbnail of its own). Same monochrome ghost-card language as the
+// Notes/Tasks empty states (ui/ghost-card.tsx), shrunk to fit the fan.
+type PreviewSlot = { kind: "image"; src: string } | { kind: "note" };
 
 // Colors: a single pastel hue per folder, rendered as translucent
 // frosted glass (blur + partial opacity) rather than an opaque fill.
@@ -84,23 +93,29 @@ function FolderTile({
   const [isPickingColor, setIsPickingColor] = useState(false);
   const [draft, setDraft] = useState(collection.name);
   const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const pickerRef = useRef<HTMLDivElement | null>(null);
+  // Anchors the color-picker Popover to the tile itself. Needed because
+  // the picker is positioned with a real Popover (portaled to
+  // document.body) rather than a plain absolutely-positioned sibling —
+  // CollectionsRow's row wrapper has `overflow-x-auto`, which per the
+  // CSS Overflow spec forces its computed overflow-y to non-`visible`
+  // too, so anything positioned *inside* the row (like the old inline
+  // picker) that pops below a tile's bottom edge gets silently clipped.
+  // Portaling out of that row is what actually fixes it.
+  const tileRef = useRef<HTMLDivElement | null>(null);
 
-  // Click-away close for the color picker — it's a plain absolutely
-  // positioned overlay (not a Popover primitive: there's no dedicated
-  // trigger element to anchor one to, "Change color" lives inside the
-  // existing dropdown/context menu instead), so it needs its own outside
-  // -click handling rather than getting one for free.
-  useEffect(() => {
-    if (!isPickingColor) return;
-    function onPointerDown(e: PointerEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setIsPickingColor(false);
-      }
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [isPickingColor]);
+  // Up to 3 fanned slots. A note/task never has a thumbnail, so without
+  // this it'd be invisible in the tile even though it's really in the
+  // collection — when there's at least one, one image slot gives way to
+  // a note ghost-card instead of showing 3 images and pretending there's
+  // nothing else there. Placed first (the back-left position, REST[0])
+  // so a real photo still gets the prominent centered spot whenever one
+  // exists.
+  const slots: PreviewSlot[] = collection.hasNotesOrTasks
+    ? [
+        { kind: "note" },
+        ...collection.previews.slice(0, 2).map((src): PreviewSlot => ({ kind: "image", src })),
+      ]
+    : collection.previews.slice(0, 3).map((src): PreviewSlot => ({ kind: "image", src }));
 
   useEffect(() => {
     imgRefs.current.forEach((el, i) => {
@@ -173,6 +188,7 @@ function FolderTile({
             pointer-events-none by default so clicks fall through to it,
             except the couple of controls that opt back in explicitly. */}
         <div
+          ref={tileRef}
           onPointerEnter={open}
           onPointerLeave={close}
           style={{ "--folder-hue": collection.colorHue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
@@ -270,20 +286,39 @@ function FolderTile({
               getting hard-clipped there. Still anchored to the upper
               ~58% so they tuck behind the info panel below at rest. */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[58%] items-end justify-center pb-2">
-            {collection.previews.length > 0 ? (
-              collection.previews.slice(0, 3).map((src, i) => (
+            {slots.length > 0 ? (
+              slots.map((slot, i) => (
                 <div
                   key={i}
                   ref={(el) => {
                     imgRefs.current[i] = el;
                   }}
-                  className="absolute h-28 w-24 overflow-hidden rounded-[10px] shadow-[0_3px_5.5px_rgba(0,0,0,0.16),0_1px_2px_rgba(0,0,0,0.1)] will-change-transform"
+                  className={cn(
+                    "absolute h-28 w-24 rounded-[10px] shadow-[0_3px_5.5px_rgba(0,0,0,0.16),0_1px_2px_rgba(0,0,0,0.1)] will-change-transform",
+                    slot.kind === "image"
+                      ? "overflow-hidden"
+                      // Top-anchored (not centered/bottom), same reason the
+                      // image slots' most legible content is naturally at
+                      // rest near the top: the card's own bottom third
+                      // gets tucked behind the folder's frosted info panel
+                      // (see below), so content anchored to the bottom
+                      // would render there and effectively disappear.
+                      : "flex flex-col gap-1.5 border border-border/60 bg-card p-2",
+                  )}
                   style={{
                     zIndex: IMAGE_Z[i] ?? 1,
                     transform: `translate(${REST[i]?.x ?? 0}px, ${REST[i]?.y ?? 0}px) rotate(${REST[i]?.rotate ?? 0}deg)`,
                   }}
                 >
-                  <Image src={src} alt="" fill className="object-cover" unoptimized />
+                  {slot.kind === "image" ? (
+                    <Image src={slot.src} alt="" fill className="object-cover" unoptimized />
+                  ) : (
+                    <>
+                      <div className="mb-0.5 h-2 w-3/4 rounded-full bg-foreground/20" />
+                      <GhostBar className="w-full" />
+                      <GhostBar className="w-2/3" />
+                    </>
+                  )}
                 </div>
               ))
             ) : (
@@ -291,44 +326,46 @@ function FolderTile({
             )}
           </div>
 
-          {/* Color picker — a plain overlay (not a Popover primitive; see
-              the pointerdown-close effect above for why) but styled and
-              animated the same as one. A sibling of the clipped layer for
-              the same reason the fanned previews are: it needs to float
-              past the card's own rounded edge, not get hard-clipped by
-              it. Only ever writes --folder-hue's underlying value via the
-              same PATCH -> mutate() path rename already uses — the blur/
-              glass CSS itself (backdrop-filter, the translucent
-              color-mix recipe) never changes, just which hue custom
-              property feeds it, so there's no way this can break the
-              glass effect the way a bug that touched the actual glass
-              rules could. */}
-          {isPickingColor && (
-            <div
-              ref={pickerRef}
-              className="glass-panel absolute left-1/2 top-full z-10 mt-2 flex w-44 -translate-x-1/2 animate-in flex-wrap justify-center gap-2 rounded-2xl fade-in-0 zoom-in-95 p-3 duration-150"
-            >
-              {FOLDER_HUE_PALETTE.map((paletteHue) => (
-                <button
-                  key={paletteHue}
-                  type="button"
-                  aria-label={`Set folder color to hue ${paletteHue}`}
-                  onClick={async () => {
-                    setIsPickingColor(false);
-                    await setColor(collection.slug, paletteHue as FolderHue);
-                  }}
-                  className={cn(
-                    "size-7 shrink-0 rounded-full ring-offset-2 ring-offset-background transition-transform hover:scale-110",
-                    collection.colorHue === paletteHue && "ring-2 ring-foreground",
-                  )}
-                  style={{
-                    background: `oklch(var(--folder-l) var(--folder-c) ${paletteHue})`,
-                  }}
-                />
-              ))}
-            </div>
-          )}
         </div>
+
+        {/* Color picker — a real Popover, anchored to the tile via
+            `tileRef` rather than wrapping a visible trigger (there isn't
+            one; "Change color" lives inside the existing dropdown/context
+            menu above instead). Portals to document.body, which is what
+            actually keeps it visible — see the tileRef comment above.
+            Only ever writes --folder-hue's underlying value via the same
+            PATCH -> mutate() path rename already uses — the blur/glass
+            CSS itself (backdrop-filter, the translucent color-mix
+            recipe) never changes, just which hue custom property feeds
+            it, so there's no way this can break the glass effect the way
+            a bug that touched the actual glass rules could. */}
+        <Popover open={isPickingColor} onOpenChange={setIsPickingColor}>
+          <PopoverContent
+            anchor={tileRef}
+            align="center"
+            sideOffset={8}
+            className="flex w-44 flex-wrap justify-center gap-2 p-3"
+          >
+            {FOLDER_HUE_PALETTE.map((paletteHue) => (
+              <button
+                key={paletteHue}
+                type="button"
+                aria-label={`Set folder color to hue ${paletteHue}`}
+                onClick={async () => {
+                  setIsPickingColor(false);
+                  await setColor(collection.slug, paletteHue as FolderHue);
+                }}
+                className={cn(
+                  "size-7 shrink-0 rounded-full ring-offset-2 ring-offset-background transition-transform hover:scale-110",
+                  collection.colorHue === paletteHue && "ring-2 ring-foreground",
+                )}
+                style={{
+                  background: `oklch(var(--folder-l) var(--folder-c) ${paletteHue})`,
+                }}
+              />
+            ))}
+          </PopoverContent>
+        </Popover>
       </ContextMenuTrigger>
       <ContextMenuContent>
         {renderMenuActions(actions, ContextMenuItem, ContextMenuShortcut)}

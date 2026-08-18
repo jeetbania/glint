@@ -11,6 +11,7 @@ export type CollectionWithPreview = {
   count: number;
   colorHue: number;
   previews: string[];
+  hasNotesOrTasks: boolean;
 };
 
 /** Collections with a member count and up to 3 preview thumbnails (most
@@ -32,6 +33,11 @@ export async function listCollectionsWithPreview(): Promise<
       // practice, so this coalesce is just a defensive floor.
       colorHue: sql<number>`coalesce(${collections.colorHue}, 176)`,
       count: sql<number>`count(${itemCollections.itemId}) filter (where ${items.status} = 'active')::int`,
+      // Notes/tasks never have a blobUrl/previewImageUrl, so they'd
+      // otherwise be invisible in a folder tile that only shows image
+      // thumbnails — this just flags "there's at least one" so the tile
+      // can mix in a ghost-card indicator alongside the real previews.
+      hasNotesOrTasks: sql<boolean>`bool_or(${items.status} = 'active' and ${items.type} in ('note', 'task'))`,
     })
     .from(collections)
     .leftJoin(itemCollections, eq(itemCollections.collectionId, collections.id))
