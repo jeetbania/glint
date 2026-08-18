@@ -199,7 +199,13 @@ export function LibraryView({
         {isLoading && items.length === 0 ? (
           <LibrarySkeleton breakpoints={breakpoints} />
         ) : (
+          // Keyed by the query + column count so a filter/sort/search/size
+          // change fully remounts the grid instead of React quietly
+          // reusing the existing cards for anything that persists across
+          // it — that's what makes ItemCard's fade-in replay on every
+          // filter/resize instead of only on the very first load.
           <Masonry
+            key={`${queryKey}-${columns}`}
             breakpointCols={breakpoints}
             className="masonry-grid"
             columnClassName="masonry-grid-column"

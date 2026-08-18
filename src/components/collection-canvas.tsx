@@ -32,6 +32,8 @@ const CLICK_THRESHOLD = 4; // px of movement before a pointerdown counts as a dr
 const MIN_NODE_SIZE = 60;
 const MAX_HISTORY = 50;
 const EXPORT_PADDING = 48;
+const DRAG_TILT_MAX_DEG = 10; // clamp so a fast flick doesn't spin the card
+const DRAG_TILT_SENSITIVITY = 2.5; // degrees per px of the latest movement step
 
 type UndoEntry =
   | { type: "position"; ref: NodeRef; before: Position; after: Position }
@@ -766,9 +768,18 @@ export function CollectionCanvas({
     primaryId: string;
     startX: number;
     startY: number;
+    lastX: number;
     bases: Record<string, Position>;
     moved: boolean;
   } | null>(null);
+
+  // Trello-card-style drag tilt — the dragged node(s) lean slightly toward
+  // whichever way the mouse just moved. dragTilt holds the live angle per
+  // node id while a drag is in progress; tiltingIds marks which ids
+  // should skip the CSS transition (instant tracking while actively
+  // dragging) versus animate smoothly back to 0 once released.
+  const [dragTilt, setDragTilt] = useState<Record<string, number>>({});
+  const [tiltingIds, setTiltingIds] = useState<string[]>([]);
 
   function onNodePointerDown(e: React.PointerEvent, ref: NodeRef) {
     // While actively editing this object's text, let clicks/drags behave
@@ -806,7 +817,15 @@ export function CollectionCanvas({
     }
     if (Object.keys(bases).length === 0) return;
 
-    nodeDrag.current = { refs, primaryId: ref.id, startX: e.clientX, startY: e.clientY, bases, moved: false };
+    nodeDrag.current = {
+      refs,
+      primaryId: ref.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastX: e.clientX,
+      bases,
+      moved: false,
+    };
     target.setPointerCapture(e.pointerId);
   }
 
@@ -825,13 +844,40 @@ export function CollectionCanvas({
         }
         return next;
       });
+
+      // Tilt toward the direction of the latest movement step (not the
+      // cumulative drag distance) — a quick flick tilts more than a slow
+      // drag, same as dragging a physical card.
+      const stepDx = e.clientX - drag.lastX;
+      const tilt = Math.max(
+        -DRAG_TILT_MAX_DEG,
+        Math.min(DRAG_TILT_MAX_DEG, stepDx * DRAG_TILT_SENSITIVITY),
+      );
+      setDragTilt((prev) => {
+        const next = { ...prev };
+        for (const r of drag.refs) next[r.id] = tilt;
+        return next;
+      });
+      setTiltingIds(drag.refs.map((r) => r.id));
     }
+    drag.lastX = e.clientX;
   }
 
   function onNodePointerUp(e: React.PointerEvent, ref: NodeRef) {
     const drag = nodeDrag.current;
     nodeDrag.current = null;
     if (!drag || drag.primaryId !== ref.id) return;
+
+    // Settle any drag-tilt back to neutral — a no-op if this gesture
+    // never actually moved. tiltingIds is now stale (cleared above), so
+    // this same update is also what flips the CSS transition back on to
+    // animate the reset instead of snapping it.
+    setTiltingIds([]);
+    setDragTilt((prev) => {
+      const next = { ...prev };
+      for (const r of drag.refs) delete next[r.id];
+      return next;
+    });
 
     if (!drag.moved) {
       if (ref.kind === "item") {
@@ -1505,6 +1551,8 @@ export function CollectionCanvas({
             if (!pos) return null;
             const ref: NodeRef = { kind: "item", id: item.id };
             const selected = selectedIds.includes(item.id);
+            const tilt = dragTilt[item.id];
+            const isTilting = tiltingIds.includes(item.id);
             return (
               <div
                 key={item.id}
@@ -1513,10 +1561,19 @@ export function CollectionCanvas({
                 onPointerMove={(e) => onNodePointerMove(e, ref)}
                 onPointerUp={(e) => onNodePointerUp(e, ref)}
                 className={cn(
-                  "absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)] transition-shadow hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
+                  "absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)]",
+                  isTilting ? "transition-shadow" : "transition-[box-shadow,rotate] duration-300 ease-out",
+                  "hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
                   selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 )}
-                style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: pos.zIndex }}
+                style={{
+                  left: pos.x,
+                  top: pos.y,
+                  width: pos.w,
+                  height: pos.h,
+                  zIndex: pos.zIndex,
+                  rotate: tilt ? `${tilt}deg` : undefined,
+                }}
               >
                 <CanvasItemBody item={item} />
               </div>
@@ -1529,6 +1586,8 @@ export function CollectionCanvas({
             const ref: NodeRef = { kind: "object", id: obj.id };
             const selected = selectedIds.includes(obj.id);
             const showHandles = selected && selectedIds.length === 1;
+            const tilt = dragTilt[obj.id];
+            const isTilting = tiltingIds.includes(obj.id);
             return (
               <div
                 key={obj.id}
@@ -1540,6 +1599,7 @@ export function CollectionCanvas({
                   "absolute touch-none select-none",
                   obj.type === "frame" ? "cursor-default" : "cursor-pointer",
                   selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
+                  !isTilting && "transition-[rotate] duration-300 ease-out",
                 )}
                 style={{
                   left: pos.x,
@@ -1547,7 +1607,14 @@ export function CollectionCanvas({
                   width: pos.w,
                   height: pos.h,
                   zIndex: pos.zIndex,
+                  // obj.rotation (persisted, via the rotate handle) rides
+                  // on `transform`; the temporary drag-tilt rides on the
+                  // standalone `rotate` property instead — the two
+                  // compose together rather than fighting over one
+                  // property, so a rotated shape still tilts correctly
+                  // mid-drag and settles back to its own true angle.
                   transform: obj.rotation ? `rotate(${obj.rotation}deg)` : undefined,
+                  rotate: tilt ? `${tilt}deg` : undefined,
                 }}
               >
                 <CanvasObjectBody

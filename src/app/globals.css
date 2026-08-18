@@ -190,7 +190,7 @@ html[data-tauri-shell] body {
    part of the floating rounded card, identical in the browser and the
    desktop app, and none of these offset hacks are needed anymore. */
 html[data-tauri-shell] [data-tauri-titlebar-strip] {
-  height: 2rem;
+  height: 1.5rem;
 }
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the
