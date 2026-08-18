@@ -37,16 +37,28 @@ function notify(title, message) {
   });
 }
 
+// The API returns JSON error bodies like {"error": "..."} (or a Zod
+// flatten() object for validation failures) — pull out a readable
+// string instead of surfacing the raw JSON in a notification.
+async function readErrorMessage(res) {
+  const text = await res.text().catch(() => "");
+  try {
+    const body = JSON.parse(text);
+    if (typeof body.error === "string") return body.error;
+    if (body.error) return JSON.stringify(body.error);
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return text || `Save failed (${res.status})`;
+}
+
 async function saveLink(url, title) {
   const res = await fetch(`${API_BASE}/api/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "link", url, title: title || undefined }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Save failed (${res.status})`);
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res));
 }
 
 async function saveImage(imageUrl, pageUrl, pageTitle) {
@@ -55,10 +67,7 @@ async function saveImage(imageUrl, pageUrl, pageTitle) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageUrl, pageUrl, pageTitle: pageTitle || undefined }),
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Save failed (${res.status})`);
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res));
 }
 
 // Toolbar icon click — quick one-click save of the current tab as a link.

@@ -25,16 +25,34 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { imageUrl, pageTitle } = parsed.data;
+  const { imageUrl, pageUrl, pageTitle } = parsed.data;
 
   let res: Response;
   try {
-    res = await fetch(imageUrl);
-  } catch {
-    return NextResponse.json({ error: "Couldn't fetch that image" }, { status: 502 });
+    // Plenty of image CDNs (X/Twitter's included) reject requests with
+    // no browser-like User-Agent or a missing/mismatched Referer as
+    // basic anti-hotlinking — a server-to-server fetch with neither
+    // reads exactly like a scraper. Sending both, with Referer set to
+    // the page the image was captured from, gets past that for the
+    // common case.
+    res = await fetch(imageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        ...(pageUrl ? { Referer: pageUrl } : {}),
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Couldn't fetch that image: ${err instanceof Error ? err.message : "network error"}` },
+      { status: 502 },
+    );
   }
   if (!res.ok || !res.body) {
-    return NextResponse.json({ error: "Couldn't fetch that image" }, { status: 502 });
+    return NextResponse.json(
+      { error: `Couldn't fetch that image (upstream returned ${res.status})` },
+      { status: 502 },
+    );
   }
 
   const contentType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
