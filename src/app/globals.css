@@ -52,9 +52,9 @@
    native macOS "photo library" app reads — color should come from the
    user's own saved content, not decorative chrome. */
 :root {
-  --background: #f2f1ed;
+  --background: #faf9f6;
   --foreground: #17171a;
-  --card: #fbfaf7;
+  --card: #fefefd;
   --card-foreground: #17171a;
   --popover: #fbfaf7;
   --popover-foreground: #17171a;
@@ -76,7 +76,7 @@
   --chart-4: #a855f7;
   --chart-5: #ec4899;
   --radius: 0.75rem;
-  --sidebar: #f2f1ed;
+  --sidebar: #faf9f6;
   --sidebar-foreground: #17171a;
   --sidebar-primary: #3b5bdb;
   --sidebar-primary-foreground: #fbfaf7;
@@ -103,12 +103,13 @@
     0 8px 24px rgba(23, 23, 26, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 
   /* Folder-card recipe (see the SVG fill in collections-row.tsx) — a
-     single pastel hue per folder, translucent rather than an opaque
-     fill, tuned to the very pale wash of the reference (a light mint at
-     ~55% alpha) rather than a punchier saturated pastel. */
-  --folder-l: 88%;
-  --folder-c: 0.08;
-  --folder-alpha: 0.55;
+     single hue per folder, translucent rather than an opaque fill.
+     Pushed more saturated/vibrant than the initial pastel-wash pass —
+     still translucent glass, but each folder's color should read
+     clearly at a glance instead of nearly washing out to white. */
+  --folder-l: 78%;
+  --folder-c: 0.14;
+  --folder-alpha: 0.65;
 }
 
 .dark {
@@ -150,13 +151,14 @@
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
     0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
-  /* Same hue set as light mode, a bit deeper/richer so the pale wash
+  /* Same hue set as light mode, a bit deeper/richer so the wash
      still reads as colorful against the near-black page instead of
      washing out — the "different colours for light and dark mode" the
-     flat #2A2A2A frame never had. */
-  --folder-l: 68%;
-  --folder-c: 0.11;
-  --folder-alpha: 0.55;
+     flat #2A2A2A frame never had. Bumped alongside light mode's vibrancy
+     pass — richer chroma, still readable against near-black. */
+  --folder-l: 62%;
+  --folder-c: 0.17;
+  --folder-alpha: 0.7;
 }
 
 @layer base {

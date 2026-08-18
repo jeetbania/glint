@@ -206,6 +206,73 @@ export const itemCollections = pgTable(
   ],
 );
 
+export const canvasObjectTypeValues = ["sticky", "text", "shape", "frame"] as const;
+export type CanvasObjectType = (typeof canvasObjectTypeValues)[number];
+
+export const canvasShapeVariantValues = ["rectangle", "ellipse"] as const;
+export type CanvasShapeVariant = (typeof canvasShapeVariantValues)[number];
+
+export const canvasFontFamilyValues = ["sans", "serif", "mono"] as const;
+export type CanvasFontFamily = (typeof canvasFontFamilyValues)[number];
+
+export const canvasTextAlignValues = ["left", "center", "right"] as const;
+export type CanvasTextAlign = (typeof canvasTextAlignValues)[number];
+
+/**
+ * FigJam-style annotation objects on a collection's infinite canvas —
+ * sticky notes, freeform text, basic shapes, and frames. Deliberately a
+ * separate table from `items`: these are canvas-only marks (no title, no
+ * tags, never shown in Library/Notes/Tasks), not a fifth item type, so
+ * they don't need to carry all of items' polymorphic baggage (url,
+ * blobUrl, search_vector, …) for fields that would always be null.
+ * Scoped directly to a collection (not via a join table like
+ * item_collections) since — unlike items — a canvas object only ever
+ * exists on the one canvas it was drawn on.
+ */
+export const canvasObjects = pgTable(
+  "canvas_objects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    type: text("type", { enum: canvasObjectTypeValues }).notNull(),
+
+    // sticky/text: note body. frame: its label. shape: unused.
+    text: text("text"),
+    // shape only — which primitive to render.
+    shapeVariant: text("shape_variant", { enum: canvasShapeVariantValues }),
+
+    x: real("x").notNull().default(0),
+    y: real("y").notNull().default(0),
+    w: real("w").notNull().default(220),
+    h: real("h").notNull().default(220),
+    rotation: real("rotation").notNull().default(0),
+    zIndex: integer("z_index").notNull().default(0),
+
+    // sticky/shape/frame background fill; null on plain text (no box).
+    fill: text("fill"),
+    textColor: text("text_color"),
+    fontFamily: text("font_family", { enum: canvasFontFamilyValues })
+      .notNull()
+      .default("sans"),
+    fontSize: integer("font_size").notNull().default(14),
+    bold: boolean("bold").notNull().default(false),
+    italic: boolean("italic").notNull().default(false),
+    align: text("align", { enum: canvasTextAlignValues }).notNull().default("left"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("canvas_objects_collection_id_idx").on(table.collectionId),
+  ],
+);
+
 /**
  * Canvas "files" (FigJam-style, multiple boards). A board is a spatial view
  * layered on top of items via item_positions — it is not a separate content

@@ -7,11 +7,13 @@ import { ArrowLeft } from "lucide-react";
 import { CollectionCanvas } from "@/components/collection-canvas";
 import { ItemDetailDialog } from "@/components/item-detail-dialog";
 import type { ApiItem } from "@/types/item";
+import type { ApiCanvasObject } from "@/types/canvas-object";
 
 type CollectionDetail = {
   collection: { id: string; name: string; slug: string };
   items: ApiItem[];
   positions: Record<string, { x: number; y: number; w: number; h: number; zIndex: number }>;
+  canvasObjects: ApiCanvasObject[];
 };
 
 export default function CollectionPage({
@@ -46,15 +48,14 @@ export default function CollectionPage({
       </div>
 
       <div className="min-h-0 flex-1">
-        {data && data.items.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-            Nothing in this collection yet. Add items to it from the Library.
-          </div>
-        ) : data ? (
+        {data ? (
           <CollectionCanvas
+            key={slug}
             items={data.items}
             positions={data.positions}
+            canvasObjects={data.canvasObjects}
             collectionSlug={slug}
+            collectionName={data.collection.name}
             onItemClick={setSelectedItemId}
           />
         ) : null}

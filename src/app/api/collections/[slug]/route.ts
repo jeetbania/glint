@@ -7,13 +7,16 @@ import {
   renameCollection,
 } from "@/lib/collections";
 import { listItems } from "@/lib/items";
+import { listCanvasObjects } from "@/lib/canvas-objects";
 import { renameCollectionSchema } from "@/lib/validation";
 
 type Params = { params: Promise<{ slug: string }> };
 
 /** Canvas bootstrap payload: the collection itself, its member items
  * (visuals + notes + tasks — the canvas isn't visuals-only like the
- * Library grid), and any saved x/y/w/h/z placements for them. */
+ * Library grid), any saved x/y/w/h/z placements for them, and any
+ * FigJam-style annotation objects (sticky notes, text, shapes, frames)
+ * drawn directly on this canvas. */
 export async function GET(_request: Request, { params }: Params) {
   const { slug } = await params;
   const collection = await getCollectionBySlug(slug);
@@ -21,12 +24,13 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [items, positions] = await Promise.all([
+  const [items, positions, canvasObjects] = await Promise.all([
     listItems({ collectionSlug: slug, sort: "recent-desc" }),
     getItemPositionsForCollection(collection.id),
+    listCanvasObjects(collection.id),
   ]);
 
-  return NextResponse.json({ collection, items, positions });
+  return NextResponse.json({ collection, items, positions, canvasObjects });
 }
 
 export async function PATCH(request: NextRequest, { params }: Params) {

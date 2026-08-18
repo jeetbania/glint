@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { itemTypeValues } from "@/db/schema";
+import {
+  itemTypeValues,
+  canvasObjectTypeValues,
+  canvasShapeVariantValues,
+  canvasFontFamilyValues,
+  canvasTextAlignValues,
+} from "@/db/schema";
 
 const colorEntry = z.object({
   hex: z.string(),
@@ -80,6 +86,29 @@ export const setItemPositionSchema = z.object({
   h: z.number().positive(),
   zIndex: z.number().int(),
 });
+
+export const createCanvasObjectSchema = z.object({
+  type: z.enum(canvasObjectTypeValues),
+  text: z.string().max(4000).optional(),
+  shapeVariant: z.enum(canvasShapeVariantValues).optional(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+  rotation: z.number().optional(),
+  zIndex: z.number().int(),
+  fill: z.string().max(60).optional(),
+  textColor: z.string().max(60).optional(),
+  fontFamily: z.enum(canvasFontFamilyValues).optional(),
+  fontSize: z.number().int().positive().max(400).optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  align: z.enum(canvasTextAlignValues).optional(),
+});
+export type CreateCanvasObjectInput = z.infer<typeof createCanvasObjectSchema>;
+
+export const updateCanvasObjectSchema = createCanvasObjectSchema.partial();
+export type UpdateCanvasObjectInput = z.infer<typeof updateCanvasObjectSchema>;
 
 export const createKanbanColumnSchema = z.object({
   name: z.string().min(1).max(60),

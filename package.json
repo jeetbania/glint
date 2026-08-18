@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -27,6 +28,7 @@
     "drizzle-zod": "^0.8.3",
     "extract-colors": "^4.2.1",
     "fractional-indexing": "^4.0.0",
+    "html-to-image": "^1.11.13",
     "jose": "^6.2.9",
     "lucide-react": "^1.31.0",
     "motion": "^13.1.0",
