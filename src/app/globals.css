@@ -197,8 +197,18 @@ html[data-tauri-shell] [data-app-frame] {
 html[data-tauri-shell] [data-app-shell] {
   border-radius: 0;
 }
+/* titleBarStyle: "Overlay" (tauri.conf.json) is meant to let content sit
+   right up against the traffic lights, not reserve a tall gap above it —
+   the header's own `py-3` (0.75rem top+bottom, sized for the normal
+   in-browser header) was the only vertical spacing in play here, and it
+   was still reading as a big dead gap above the logo compared to how a
+   native title bar packs a sidebar header right next to the traffic
+   lights. Pulled it in tight; nudge this if it still doesn't land flush
+   once you check it against the real traffic-light position. */
 html[data-tauri-shell] [data-app-header] {
   padding-left: 4.5rem;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
 }
 /* Every page's own leading padding (px-6 on most views) is unrelated to
    the traffic lights — it was never meant to line up with the header's
