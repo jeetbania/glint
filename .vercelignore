@@ -1,8 +1,9 @@
-# The Tauri desktop shell's Rust build output — multi-GB of compiled
-# artifacts, entirely irrelevant to the Vercel web deployment. This is
-# already covered by src-tauri/.gitignore, but Vercel's own upload
-# scanner doesn't appear to honor nested .gitignore files, so it needs
-# to be listed explicitly here too (this caused a "File size limit
-# exceeded (100 MB)" deploy failure after uploading ~2.9GB).
-src-tauri/target
-src-tauri/gen
+# electron-builder's output directory — multi-hundred-MB .dmg/.zip
+# installer artifacts, entirely irrelevant to the Vercel web deployment
+# (the desktop app is a separate build, not part of what gets deployed
+# here). Already covered by .gitignore, but Vercel's own upload scanner
+# doesn't appear to honor .gitignore the same way for every path, so
+# it's listed explicitly here too — a nearly identical issue with
+# src-tauri/target (the old Tauri shell's build output) caused a "File
+# size limit exceeded (100 MB)" deploy failure previously.
+release

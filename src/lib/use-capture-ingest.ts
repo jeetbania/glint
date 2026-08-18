@@ -42,7 +42,7 @@ function readImageDimensions(
 }
 
 /** The shared "turn this into a saved item" logic behind both paste/drop
- * capture (PasteCaptureProvider) and the Tauri clipboard-watcher
+ * capture (PasteCaptureProvider) and the Electron clipboard-watcher
  * (ClipboardWatchProvider) — one save path, two triggers. */
 export function useCaptureIngest() {
   const { mutate } = useSWRConfig();

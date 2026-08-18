@@ -12,7 +12,7 @@ import { useSWRConfig } from "swr";
  * every /api/items key on that event gets a page you already have open
  * to reflect an extension save within a couple hundred ms, instead of
  * waiting on the Library grid's own 30s fallback poll (which stays in
- * place for contexts this can't reach at all — the Tauri desktop app
+ * place for contexts this can't reach at all — the Electron desktop app
  * isn't a Chrome tab, a different device, etc.).
  */
 export function ExtensionSyncProvider() {

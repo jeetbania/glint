@@ -203,24 +203,32 @@
   }
 }
 
-/* Desktop shell (Tauri): the native window itself carries real OS
-   vibrancy (see src-tauri/src/lib.rs), so the page background needs to
-   go transparent to let it show through. */
-html[data-tauri-shell] body {
+/* Desktop shell (Electron): the native window itself carries real OS
+   vibrancy (see electron/main.js's `vibrancy`/`backgroundMaterial`
+   options), so the page background needs to go transparent to let it
+   show through. */
+html[data-desktop-shell] body {
   background: transparent;
 }
 /* Several earlier passes tried to make the app's own header row share
-   space with macOS's overlaid traffic-light buttons (titleBarStyle:
-   "Overlay" in tauri.conf.json) — offsetting the header with padding to
-   dodge them, filling the window edge-to-edge so the header started
-   exactly at the traffic lights, etc. All of that fought the same
-   problem from the wrong side. The traffic lights now get a dedicated,
-   empty strip of their own (data-tauri-titlebar-strip, in the layout)
-   that no app UI shares — so the header goes back to being a normal
-   part of the floating rounded card, identical in the browser and the
-   desktop app, and none of these offset hacks are needed anymore. */
-html[data-tauri-shell] [data-tauri-titlebar-strip] {
+   space with macOS's overlaid traffic-light buttons — offsetting the
+   header with padding to dodge them, filling the window edge-to-edge so
+   the header started exactly at the traffic lights, etc. All of that
+   fought the same problem from the wrong side. The traffic lights now
+   get a dedicated, empty strip of their own (data-titlebar-strip, in the
+   layout) that no app UI shares — so the header goes back to being a
+   normal part of the floating rounded card, identical in the browser
+   and the desktop app, and none of these offset hacks are needed
+   anymore. */
+html[data-desktop-shell] [data-titlebar-strip] {
   height: 1.5rem;
+  /* Makes the strip window-draggable — Electron's equivalent of what
+     Tauri's data-tauri-drag-region attribute used to do, just a CSS
+     property instead of an HTML attribute. Scoped to the desktop shell
+     even though -webkit-app-region is harmless (not invalid CSS) in a
+     normal browser tab too, so it's obvious at a glance this only means
+     something inside the Electron window. */
+  -webkit-app-region: drag;
 }
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the

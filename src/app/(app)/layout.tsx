@@ -22,14 +22,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-screen flex-col overflow-hidden">
         {/* Reserved purely for macOS's traffic-light window controls in
             the desktop app — empty on purpose, no app UI shares this row
-            (see globals.css's data-tauri-shell rule for the actual
-            height; it's zero-height and invisible in the browser). Still
-            a drag region so the window remains draggable from up here
-            even with nothing in it. */}
-        <div data-tauri-titlebar-strip data-tauri-drag-region className="h-0 w-full shrink-0" />
+            (see globals.css's data-desktop-shell rule for the actual
+            height; it's zero-height and invisible in the browser). Draggable
+            via a plain CSS -webkit-app-region: drag rule scoped to this
+            attribute (see globals.css) — Electron's equivalent of what
+            Tauri's data-tauri-drag-region attribute used to do. Kept to
+            just this strip rather than also the header below (the old
+            Tauri build additionally made the whole header draggable) —
+            Electron's drag-region is coarser (a CSS property, not an
+            attribute Tauri special-cased per-target), so extending it to
+            a row full of buttons/links risks silently breaking clicks on
+            whichever one doesn't get an explicit no-drag override. */}
+        <div data-titlebar-strip className="h-0 w-full shrink-0" />
         {/* This padding is the window-edge margin — in the desktop app
             it's where native vibrancy shows through (see globals.css's
-            data-tauri-shell rules); in the browser it's invisible since
+            data-desktop-shell rules); in the browser it's invisible since
             it just matches the page background. The shell inside is a
             single grounded panel (not glass-everywhere) matching the
             "clean but usable" native reference — kept as the same
@@ -43,7 +50,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <header
               data-app-header
-              data-tauri-drag-region
               className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-3"
             >
               <Link
