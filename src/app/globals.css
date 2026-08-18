@@ -175,49 +175,22 @@
 
 /* Desktop shell (Tauri): the native window itself carries real OS
    vibrancy (see src-tauri/src/lib.rs), so the page background needs to
-   go transparent to let it show through, and the in-app header needs
-   room for macOS's overlaid traffic-light buttons (titleBarStyle:
-   "Overlay" in tauri.conf.json leaves them floating over the page). */
+   go transparent to let it show through. */
 html[data-tauri-shell] body {
   background: transparent;
 }
-/* The web/browser version insets the whole app shell by `p-2` to show a
-   rounded "floating card" over the page background — but in the actual
-   Tauri window (titleBarStyle: Overlay, hiddenTitle: true), that inset
-   left a dead gap between the true window top and the header below it.
-   The traffic lights sit in that gap, disconnected from the app's own
-   header, and — since data-tauri-drag-region only lives on the header —
-   that same gap wasn't draggable either. Filling the window edge-to-edge
-   in Tauri fixes both: the header (and its drag region) now starts
-   exactly where the traffic lights are, matching how every other native
-   overlay-title-bar app is laid out. */
-html[data-tauri-shell] [data-app-frame] {
-  padding: 0;
-}
-html[data-tauri-shell] [data-app-shell] {
-  border-radius: 0;
-}
-/* titleBarStyle: "Overlay" (tauri.conf.json) is meant to let content sit
-   right up against the traffic lights, not reserve a tall gap above it —
-   the header's own `py-3` (0.75rem top+bottom, sized for the normal
-   in-browser header) was the only vertical spacing in play here, and it
-   was still reading as a big dead gap above the logo compared to how a
-   native title bar packs a sidebar header right next to the traffic
-   lights. Pulled it in tight; nudge this if it still doesn't land flush
-   once you check it against the real traffic-light position. */
-html[data-tauri-shell] [data-app-header] {
-  padding-left: 4.5rem;
-  padding-top: 0.375rem;
-  padding-bottom: 0.375rem;
-}
-/* Every page's own leading padding (px-6 on most views) is unrelated to
-   the traffic lights — it was never meant to line up with the header's
-   4.5rem clearance above it, so the logo sat noticeably more indented
-   than the page content below it. Adding the gap here (3rem + the
-   common px-6 = 4.5rem) brings the two back into alignment instead of
-   touching every page's own padding individually. */
-html[data-tauri-shell] [data-app-main] {
-  padding-left: 3rem;
+/* Several earlier passes tried to make the app's own header row share
+   space with macOS's overlaid traffic-light buttons (titleBarStyle:
+   "Overlay" in tauri.conf.json) — offsetting the header with padding to
+   dodge them, filling the window edge-to-edge so the header started
+   exactly at the traffic lights, etc. All of that fought the same
+   problem from the wrong side. The traffic lights now get a dedicated,
+   empty strip of their own (data-tauri-titlebar-strip, in the layout)
+   that no app UI shares — so the header goes back to being a normal
+   part of the floating rounded card, identical in the browser and the
+   desktop app, and none of these offset hacks are needed anymore. */
+html[data-tauri-shell] [data-tauri-titlebar-strip] {
+  height: 2rem;
 }
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the

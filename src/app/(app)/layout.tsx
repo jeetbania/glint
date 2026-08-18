@@ -17,56 +17,68 @@ import { Button } from "@/components/ui/button";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SwrProvider>
-      {/* This padding is the window-edge margin — in the desktop app it's
-          where native vibrancy shows through (see globals.css's
-          data-tauri-shell rules); in the browser it's invisible since it
-          just matches the page background. The shell inside is a single
-          grounded panel (not glass-everywhere) matching the "clean but
-          usable" native reference. */}
-      <div data-app-frame className="h-screen w-screen overflow-hidden p-2">
-        <div
-          data-app-shell
-          className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl"
-        >
-          <header
-            data-app-header
-            data-tauri-drag-region
-            className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-3"
+      <div className="flex h-screen w-screen flex-col overflow-hidden">
+        {/* Reserved purely for macOS's traffic-light window controls in
+            the desktop app — empty on purpose, no app UI shares this row
+            (see globals.css's data-tauri-shell rule for the actual
+            height; it's zero-height and invisible in the browser). Still
+            a drag region so the window remains draggable from up here
+            even with nothing in it. */}
+        <div data-tauri-titlebar-strip data-tauri-drag-region className="h-0 w-full shrink-0" />
+        {/* This padding is the window-edge margin — in the desktop app
+            it's where native vibrancy shows through (see globals.css's
+            data-tauri-shell rules); in the browser it's invisible since
+            it just matches the page background. The shell inside is a
+            single grounded panel (not glass-everywhere) matching the
+            "clean but usable" native reference — kept as the same
+            floating rounded card in both the browser and the desktop app
+            now that the traffic lights have their own strip above it
+            instead of trying to share a row with the app's own header. */}
+        <div data-app-frame className="min-h-0 flex-1 overflow-hidden p-2">
+          <div
+            data-app-shell
+            className="glass-panel flex h-full w-full flex-col overflow-hidden rounded-2xl"
           >
-            <Link
-              href="/library"
-              className="flex items-center gap-2.5 font-heading text-lg font-semibold tracking-heading"
+            <header
+              data-app-header
+              data-tauri-drag-region
+              className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-3"
             >
-              <Image
-                src="/logo.png"
-                alt=""
-                width={32}
-                height={32}
-                className="rounded-[8px]"
-                priority
-              />
-              Glint
-            </Link>
+              <Link
+                href="/library"
+                className="flex items-center gap-2.5 font-heading text-lg font-semibold tracking-heading"
+              >
+                <Image
+                  src="/logo.png"
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="rounded-[8px]"
+                  priority
+                />
+                Glint
+              </Link>
 
-            <TopNav />
+              <TopNav />
 
-            <div className="flex items-center justify-end gap-1.5">
-              <SearchTriggerButton />
-              <Button variant="outline" size="icon-sm" render={<Link href="/tags" />}>
-                <Tag className="size-4" />
-              </Button>
-              <ThemeToggle />
-              <SettingsTriggerButton />
-              <form action={logout}>
-                <Button type="submit" variant="outline" size="icon-sm" aria-label="Log out">
-                  <LogOut className="size-4" />
+              <div className="flex items-center justify-end gap-1.5">
+                <SearchTriggerButton />
+                <Button variant="outline" size="icon-sm" render={<Link href="/tags" />}>
+                  <Tag className="size-4" />
                 </Button>
-              </form>
-            </div>
-          </header>
-          <main data-app-main className="min-w-0 flex-1 overflow-y-auto">
-            {children}
-          </main>
+                <ThemeToggle />
+                <SettingsTriggerButton />
+                <form action={logout}>
+                  <Button type="submit" variant="outline" size="icon-sm" aria-label="Log out">
+                    <LogOut className="size-4" />
+                  </Button>
+                </form>
+              </div>
+            </header>
+            <main data-app-main className="min-w-0 flex-1 overflow-y-auto">
+              {children}
+            </main>
+          </div>
         </div>
       </div>
       <PasteCaptureProvider />
