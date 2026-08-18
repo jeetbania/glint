@@ -52,7 +52,7 @@
    native macOS "photo library" app reads — color should come from the
    user's own saved content, not decorative chrome. */
 :root {
-  --background: #faf9f6;
+  --background: #ffffff;
   --foreground: #17171a;
   --card: #fefefd;
   --card-foreground: #17171a;
@@ -76,7 +76,7 @@
   --chart-4: #a855f7;
   --chart-5: #ec4899;
   --radius: 0.75rem;
-  --sidebar: #faf9f6;
+  --sidebar: #ffffff;
   --sidebar-foreground: #17171a;
   --sidebar-primary: #3b5bdb;
   --sidebar-primary-foreground: #fbfaf7;
@@ -104,12 +104,12 @@
 
   /* Folder-card recipe (see the SVG fill in collections-row.tsx) — a
      single hue per folder, translucent rather than an opaque fill.
-     Pushed more saturated/vibrant than the initial pastel-wash pass —
-     still translucent glass, but each folder's color should read
-     clearly at a glance instead of nearly washing out to white. */
-  --folder-l: 78%;
-  --folder-c: 0.14;
-  --folder-alpha: 0.65;
+     Settled back toward a lighter pastel after the previous "vibrant"
+     pass ran too saturated — still colorful enough to tell folders
+     apart at a glance, but soft rather than punchy. */
+  --folder-l: 85%;
+  --folder-c: 0.095;
+  --folder-alpha: 0.6;
 }
 
 .dark {
@@ -154,11 +154,12 @@
   /* Same hue set as light mode, a bit deeper/richer so the wash
      still reads as colorful against the near-black page instead of
      washing out — the "different colours for light and dark mode" the
-     flat #2A2A2A frame never had. Bumped alongside light mode's vibrancy
-     pass — richer chroma, still readable against near-black. */
-  --folder-l: 62%;
-  --folder-c: 0.17;
-  --folder-alpha: 0.7;
+     flat #2A2A2A frame never had. Dialed back alongside light mode's
+     pastel pass, just kept a touch richer since dark needs more chroma
+     to read at all against near-black. */
+  --folder-l: 58%;
+  --folder-c: 0.125;
+  --folder-alpha: 0.6;
 }
 
 @layer base {
@@ -424,14 +425,21 @@ html[data-tauri-shell] [data-item-detail-header] {
      wash in light mode and a richer, non-washed-out tone in dark mode.
 
      This is the SEPARATE frosted info panel that sits on top of the
-     lower portion of that shape, holding the title/count text. Its own
-     tint is deliberately a fixed dark glass (not the folder's hue, and
-     not flipping with the site theme) — white text needs guaranteed
-     contrast, and a panel that got lighter in light mode (matching the
-     reference's near-white glass) would fail exactly the legibility
-     test this exists to solve. */
+     lower portion of that shape, holding the title/count text. Its tint
+     is a DARKENED version of the folder's own hue (not the pale
+     --folder-l lightness, not flat black either) — mixing in mostly-black
+     read as too heavy once folders got more colorful; deriving the panel
+     color from the same hue at a much lower lightness keeps it visibly
+     "this folder's color, just deep enough for white text," matching a
+     tinted-glass look rather than a black scrim. Deliberately NOT
+     flipping with the site theme — white text needs guaranteed contrast
+     regardless of light/dark mode. */
   .folder-card-info {
-    background: color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) 20%, rgba(10, 10, 12, 0.72));
+    background: color-mix(
+      in oklch,
+      oklch(calc(var(--folder-l) * 0.45) calc(var(--folder-c) * 1.3) var(--folder-hue)) 78%,
+      rgba(10, 10, 14, 0.55)
+    );
     backdrop-filter: blur(20px) saturate(1.4);
     -webkit-backdrop-filter: blur(20px) saturate(1.4);
   }

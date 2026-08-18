@@ -154,35 +154,98 @@ function FolderTile({
           onPointerLeave={close}
           style={{ "--folder-hue": hue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
           className={cn(
-            "group relative w-64 shrink-0 overflow-hidden rounded-[18px] shadow-[0_16px_18px_-8px_rgba(0,0,0,0.25),0_4px_6px_-2px_rgba(0,0,0,0.15)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
+            "group relative w-64 shrink-0 rounded-[18px] shadow-[0_10px_14px_-8px_rgba(0,0,0,0.18),0_3px_5px_-2px_rgba(0,0,0,0.1)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
-          <Link
-            href={isRenaming ? "#" : `/collections/${collection.slug}`}
-            onClick={(e) => isRenaming && e.preventDefault()}
-            aria-label={collection.name}
-            className="absolute inset-0 z-0"
-          />
-
-          {/* Manila-folder-tab silhouette — the folder itself. */}
-          <svg
-            aria-hidden
-            viewBox="0 0 426 362.09"
-            preserveAspectRatio="none"
-            className="pointer-events-none absolute inset-0 z-0 h-full w-full"
-          >
-            <path
-              d={FOLDER_TAB_PATH}
-              style={{
-                fill: "color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) calc(var(--folder-alpha) * 100%), transparent)",
-              }}
+          {/* Clipped layer — everything that must not bleed past the
+              card's rounded silhouette. Deliberately NOT the same node
+              as the shadow/hover-scale above: `overflow-hidden` on an
+              element clips its own box-shadow too, which was cutting
+              the card's drop shadow off at the bottom. Keeping the clip
+              on this inner wrapper instead lets the outer box cast its
+              shadow freely. */}
+          <div className="absolute inset-0 overflow-hidden rounded-[18px]">
+            <Link
+              href={isRenaming ? "#" : `/collections/${collection.slug}`}
+              onClick={(e) => isRenaming && e.preventDefault()}
+              aria-label={collection.name}
+              className="absolute inset-0 z-0"
             />
-          </svg>
 
-          {/* Fanned previews, peeking out of the tab — anchored to the
-              upper ~58% so they tuck behind the info panel below, same
-              as the reference. */}
+            {/* Manila-folder-tab silhouette — the folder itself. */}
+            <svg
+              aria-hidden
+              viewBox="0 0 426 362.09"
+              preserveAspectRatio="none"
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+            >
+              <path
+                d={FOLDER_TAB_PATH}
+                style={{
+                  fill: "color-mix(in oklch, oklch(var(--folder-l) var(--folder-c) var(--folder-hue)) calc(var(--folder-alpha) * 100%), transparent)",
+                }}
+              />
+            </svg>
+
+            {/* Info panel — a genuinely separate frosted-glass layer (not
+                just a gradient scrim), overlapping the previews' lower
+                edge so they read as tucked behind it. Deliberately kept a
+                fixed dark tint (not the reference's near-white one) so
+                white text stays legible regardless of the site's own
+                light/dark theme — see globals.css. */}
+            <div className="folder-card-info pointer-events-none absolute inset-x-0 bottom-0 top-[32%] z-[2] flex flex-col justify-between rounded-[18px] p-4">
+              {isRenaming ? (
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") submitRename();
+                    if (e.key === "Escape") {
+                      setDraft(collection.name);
+                      setIsRenaming(false);
+                    }
+                  }}
+                  onBlur={submitRename}
+                  className="pointer-events-auto min-w-0 rounded bg-white/15 px-1 -mx-1 font-heading text-xl font-medium tracking-heading text-white outline-none"
+                />
+              ) : (
+                <p className="truncate font-heading text-xl font-medium tracking-heading text-white">
+                  {collection.name}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-base tracking-heading text-white/70">
+                  {collection.count} {collection.count === 1 ? "save" : "saves"}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label={`More options for ${collection.name}`}
+                        className="glass-pill pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full text-foreground opacity-0 transition-opacity hover:brightness-105 group-hover:opacity-100 data-popup-open:opacity-100"
+                      />
+                    }
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {renderMenuActions(actions, DropdownMenuItem, DropdownMenuShortcut)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+
+          {/* Fanned previews, peeking out of the tab — a sibling of the
+              clipped layer above (not inside it), so they're free to
+              rise past the card's own top edge on hover instead of
+              getting hard-clipped there. Still anchored to the upper
+              ~58% so they tuck behind the info panel below at rest. */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex h-[58%] items-end justify-center pb-2">
             {collection.previews.length > 0 ? (
               collection.previews.slice(0, 3).map((src, i) => (
@@ -191,7 +254,7 @@ function FolderTile({
                   ref={(el) => {
                     imgRefs.current[i] = el;
                   }}
-                  className="absolute h-28 w-24 overflow-hidden rounded-[10px] shadow-[0_3px_5.5px_rgba(0,0,0,0.22),0_1px_2px_rgba(0,0,0,0.13)] will-change-transform"
+                  className="absolute h-28 w-24 overflow-hidden rounded-[10px] shadow-[0_3px_5.5px_rgba(0,0,0,0.16),0_1px_2px_rgba(0,0,0,0.1)] will-change-transform"
                   style={{
                     zIndex: IMAGE_Z[i] ?? 1,
                     transform: `translate(${REST[i]?.x ?? 0}px, ${REST[i]?.y ?? 0}px) rotate(${REST[i]?.rotate ?? 0}deg)`,
@@ -203,58 +266,6 @@ function FolderTile({
             ) : (
               <Folder className="mb-4 size-8 text-white/80" />
             )}
-          </div>
-
-          {/* Info panel — a genuinely separate frosted-glass layer (not
-              just a gradient scrim), overlapping the previews' lower
-              edge so they read as tucked behind it. Deliberately kept a
-              fixed dark tint (not the reference's near-white one) so
-              white text stays legible regardless of the site's own
-              light/dark theme — see globals.css. */}
-          <div className="folder-card-info pointer-events-none absolute inset-x-0 bottom-0 top-[32%] z-[2] flex flex-col justify-between rounded-[18px] p-4">
-            {isRenaming ? (
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === "Enter") submitRename();
-                  if (e.key === "Escape") {
-                    setDraft(collection.name);
-                    setIsRenaming(false);
-                  }
-                }}
-                onBlur={submitRename}
-                className="pointer-events-auto min-w-0 rounded bg-white/15 px-1 -mx-1 font-heading text-xl font-medium tracking-heading text-white outline-none"
-              />
-            ) : (
-              <p className="truncate font-heading text-xl font-medium tracking-heading text-white">
-                {collection.name}
-              </p>
-            )}
-
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-base tracking-heading text-white/70">
-                {collection.count} {collection.count === 1 ? "save" : "saves"}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`More options for ${collection.name}`}
-                      className="glass-pill pointer-events-auto flex size-8 shrink-0 items-center justify-center rounded-full text-foreground opacity-0 transition-opacity hover:brightness-105 group-hover:opacity-100 data-popup-open:opacity-100"
-                    />
-                  }
-                >
-                  <MoreHorizontal className="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {renderMenuActions(actions, DropdownMenuItem, DropdownMenuShortcut)}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
           </div>
         </div>
       </ContextMenuTrigger>

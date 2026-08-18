@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Image from "next/image";
 import { upload } from "@vercel/blob/client";
 import { useSWRConfig } from "swr";
@@ -8,16 +8,18 @@ import { toast } from "sonner";
 import { toPng } from "html-to-image";
 import { FileText, CheckSquare, Link as LinkIcon, Minus, Plus, LocateFixed } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
-import { CanvasToolbar, type CanvasTool } from "@/components/canvas-toolbar";
+import { CanvasToolbar } from "@/components/canvas-toolbar";
 import {
   CanvasObjectToolbar,
   FONT_FAMILY_CSS,
   type CanvasObjectPatch,
 } from "@/components/canvas-object-toolbar";
+import { CanvasAlignToolbar, type AlignEdge, type DistributeAxis } from "@/components/canvas-align-toolbar";
+import { CanvasExportDialog, type ExportBackground } from "@/components/canvas-export-dialog";
 import { extractImageColors } from "@/lib/color-extraction-client";
 import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
-import type { ApiCanvasObject, CanvasObjectType } from "@/types/canvas-object";
+import type { ApiCanvasObject, CanvasObjectType, CanvasShapeVariant } from "@/types/canvas-object";
 
 type Position = { x: number; y: number; w: number; h: number; zIndex: number };
 type NodeRef = { kind: "item"; id: string } | { kind: "object"; id: string };
@@ -29,12 +31,24 @@ const GRID_GAP = 28;
 const CLICK_THRESHOLD = 4; // px of movement before a pointerdown counts as a drag, not a click
 const MIN_NODE_SIZE = 60;
 const MAX_HISTORY = 50;
+const EXPORT_PADDING = 48;
 
 type UndoEntry =
   | { type: "position"; ref: NodeRef; before: Position; after: Position }
+  | { type: "group-position"; refs: NodeRef[]; before: Position[]; after: Position[] }
   | { type: "object-create"; obj: ApiCanvasObject }
   | { type: "object-delete"; obj: ApiCanvasObject }
+  | { type: "group-delete"; objs: ApiCanvasObject[] }
   | { type: "object-update"; id: string; before: CanvasObjectPatch; after: CanvasObjectPatch };
+
+const SHAPE_SHORTCUT_KEYS: Record<string, CanvasShapeVariant> = {
+  r: "rectangle",
+  e: "ellipse",
+  y: "triangle",
+  l: "line",
+  a: "arrow",
+  b: "elbow-arrow",
+};
 
 /** Auto-arranges any item with no saved position into a simple grid, so a
  * fresh collection isn't a blank canvas — positions are only written to
@@ -75,6 +89,13 @@ function readImageDimensions(blob: Blob): Promise<{ width: number; height: numbe
   });
 }
 
+function rectsIntersect(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
 /** Default shape/geometry for each newly-placed canvas object, keyed off
  * the click point so it lands centered on the cursor. */
 function defaultObjectFor(
@@ -82,6 +103,7 @@ function defaultObjectFor(
   cx: number,
   cy: number,
   zIndex: number,
+  shapeVariant: CanvasShapeVariant = "rectangle",
 ) {
   switch (type) {
     case "sticky":
@@ -113,7 +135,8 @@ function defaultObjectFor(
         fontSize: 20,
         align: "left" as const,
       };
-    case "shape":
+    case "shape": {
+      const isStroke = shapeVariant === "line" || shapeVariant === "arrow" || shapeVariant === "elbow-arrow";
       return {
         type,
         x: cx - 80,
@@ -121,9 +144,10 @@ function defaultObjectFor(
         w: 160,
         h: 160,
         zIndex,
-        fill: "#BFDBFE",
-        shapeVariant: "rectangle" as const,
+        fill: isStroke ? "#3B5BDB" : "#BFDBFE",
+        shapeVariant,
       };
+    }
     case "frame":
       return {
         type,
@@ -164,11 +188,6 @@ export function CollectionCanvas({
     initialCanvasObjects,
   );
 
-  // Base layout: saved DB positions win, anything without one falls back
-  // to an auto-arranged grid slot (items) or its creation spot (objects).
-  // `overrides` holds anything actively (or just-finished) being
-  // dragged/resized locally, so a drag never snaps back while waiting on
-  // the PATCH + SWR revalidation round-trip.
   const objectBasePositions = useMemo(() => {
     const out: Record<string, Position> = {};
     for (const o of canvasObjectsState) {
@@ -204,13 +223,20 @@ export function CollectionCanvas({
     return true;
   });
 
+  const kindById = useMemo(() => {
+    const m = new Map<string, "item" | "object">();
+    for (const it of items) m.set(it.id, "item");
+    for (const o of canvasObjectsState) m.set(o.id, "object");
+    return m;
+  }, [items, canvasObjectsState]);
+  function nodeRefById(id: string): NodeRef {
+    return { kind: kindById.get(id) === "item" ? "item" : "object", id };
+  }
+
   const [pan, setPan] = useState({ x: 80, y: 60 });
   const [zoom, setZoom] = useState(1);
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  // Mirrored into refs (via effect, not during render) so event handlers
-  // registered once via useCallback can always read the latest pan/zoom
-  // without needing to be re-created every time either changes.
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
   useEffect(() => {
@@ -232,8 +258,6 @@ export function CollectionCanvas({
     setZoom(nextZoom);
   }, []);
 
-  // Wheel: plain scroll pans (matches standard trackpad/mouse-wheel
-  // canvas behavior); Cmd/Ctrl+scroll zooms, centered on the cursor.
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       if (e.metaKey || e.ctrlKey) {
@@ -248,10 +272,15 @@ export function CollectionCanvas({
   );
 
   // -------------------------------------------------------------------
-  // Tool + selection state
+  // Selection + edit-mode state
   // -------------------------------------------------------------------
-  const [tool, setTool] = useState<CanvasTool>("select");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    editingIdRef.current = editingId;
+  }, [editingId]);
+
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | HTMLInputElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -264,6 +293,15 @@ export function CollectionCanvas({
   }, [pendingFocusId, canvasObjectsState]);
 
   const maxZ = useRef(items.length + canvasObjectsState.length + 1);
+  const minZ = useRef(-2000);
+
+  // Space-held → pan (matches Figma/FigJam convention). Marquee-select is
+  // the default empty-space drag gesture otherwise (see task below).
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
+  useEffect(() => {
+    spaceHeldRef.current = spaceHeld;
+  }, [spaceHeld]);
 
   // -------------------------------------------------------------------
   // Undo / redo
@@ -308,6 +346,15 @@ export function CollectionCanvas({
     if (entry.type === "position") {
       setPositions((prev) => ({ ...prev, [entry.ref.id]: entry.before }));
       persistPosition(entry.ref, entry.before);
+    } else if (entry.type === "group-position") {
+      setPositions((prev) => {
+        const next = { ...prev };
+        entry.refs.forEach((r, i) => {
+          next[r.id] = entry.before[i];
+        });
+        return next;
+      });
+      entry.refs.forEach((r, i) => persistPosition(r, entry.before[i]));
     } else if (entry.type === "object-update") {
       setCanvasObjectsState((prev) =>
         prev.map((o) => (o.id === entry.id ? { ...o, ...entry.before } : o)),
@@ -324,7 +371,7 @@ export function CollectionCanvas({
         delete next[entry.obj.id];
         return next;
       });
-      if (selectedId === entry.obj.id) setSelectedId(null);
+      setSelectedIds((prev) => prev.filter((id) => id !== entry.obj.id));
       void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
         method: "DELETE",
       });
@@ -336,6 +383,15 @@ export function CollectionCanvas({
         ...prev,
         [created.id]: { x: created.x, y: created.y, w: created.w, h: created.h, zIndex: created.zIndex },
       }));
+    } else if (entry.type === "group-delete") {
+      const created = await Promise.all(entry.objs.map((o) => recreateObjectOnServer(o)));
+      entry.objs = created;
+      setCanvasObjectsState((prev) => [...prev, ...created]);
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const c of created) next[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h, zIndex: c.zIndex };
+        return next;
+      });
     }
   }
 
@@ -343,6 +399,15 @@ export function CollectionCanvas({
     if (entry.type === "position") {
       setPositions((prev) => ({ ...prev, [entry.ref.id]: entry.after }));
       persistPosition(entry.ref, entry.after);
+    } else if (entry.type === "group-position") {
+      setPositions((prev) => {
+        const next = { ...prev };
+        entry.refs.forEach((r, i) => {
+          next[r.id] = entry.after[i];
+        });
+        return next;
+      });
+      entry.refs.forEach((r, i) => persistPosition(r, entry.after[i]));
     } else if (entry.type === "object-update") {
       setCanvasObjectsState((prev) =>
         prev.map((o) => (o.id === entry.id ? { ...o, ...entry.after } : o)),
@@ -367,10 +432,22 @@ export function CollectionCanvas({
         delete next[entry.obj.id];
         return next;
       });
-      if (selectedId === entry.obj.id) setSelectedId(null);
+      setSelectedIds((prev) => prev.filter((id) => id !== entry.obj.id));
       void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
         method: "DELETE",
       });
+    } else if (entry.type === "group-delete") {
+      const ids = entry.objs.map((o) => o.id);
+      setCanvasObjectsState((prev) => prev.filter((o) => !ids.includes(o.id)));
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const id of ids) delete next[id];
+        return next;
+      });
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      for (const id of ids) {
+        void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+      }
     }
   }
 
@@ -390,14 +467,73 @@ export function CollectionCanvas({
     setUndoStack((prev) => [...prev, entry]);
   }
 
+  // -------------------------------------------------------------------
+  // Delete the current selection — canvas objects are hard-deleted;
+  // library items are only removed from THIS collection (they can live
+  // in others / the Library itself, so a canvas delete shouldn't nuke
+  // the underlying item).
+  // -------------------------------------------------------------------
+  async function handleDeleteSelection() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setSelectedIds([]);
+    setEditingId(null);
+
+    const objIds = ids.filter((id) => kindById.get(id) === "object");
+    const itemIds = ids.filter((id) => kindById.get(id) === "item");
+
+    if (objIds.length > 0) {
+      const objs = objIds
+        .map((id) => {
+          const obj = canvasObjectsState.find((o) => o.id === id);
+          const pos = positions[id];
+          return obj && pos ? { ...obj, ...pos } : null;
+        })
+        .filter((o): o is ApiCanvasObject => !!o);
+      setCanvasObjectsState((prev) => prev.filter((o) => !objIds.includes(o.id)));
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const id of objIds) delete next[id];
+        return next;
+      });
+      for (const id of objIds) {
+        void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+      }
+      if (objs.length > 1) pushUndo({ type: "group-delete", objs });
+      else if (objs.length === 1) pushUndo({ type: "object-delete", obj: objs[0] });
+    }
+
+    if (itemIds.length > 0) {
+      for (const id of itemIds) {
+        const item = items.find((i) => i.id === id);
+        if (!item) continue;
+        const remaining = item.collections.filter((c) => c.slug !== collectionSlug).map((c) => c.name);
+        void fetch(`/api/items/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ collections: remaining }),
+        });
+      }
+      await mutate(`/api/collections/${collectionSlug}`);
+    }
+  }
+
   // Keyboard shortcuts — skipped entirely while typing in a text field so
   // native undo/backspace inside a sticky note isn't hijacked.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const active = document.activeElement;
       const isTyping = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement;
+
+      if (e.code === "Space" && !isTyping) {
+        e.preventDefault();
+        spaceHeldRef.current = true;
+        setSpaceHeld(true);
+        return;
+      }
       if (e.key === "Escape") {
-        setSelectedId(null);
+        setSelectedIds([]);
+        setEditingId(null);
         return;
       }
       if (isTyping) return;
@@ -407,65 +543,136 @@ export function CollectionCanvas({
         else void undo();
         return;
       }
-      if ((e.key === "Backspace" || e.key === "Delete") && selectedId) {
+      if ((e.key === "Backspace" || e.key === "Delete") && selectedIds.length > 0) {
         e.preventDefault();
-        handleDeleteObject(selectedId);
+        void handleDeleteSelection();
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+        const variant = SHAPE_SHORTCUT_KEYS[e.key.toLowerCase()];
+        if (variant) {
+          e.preventDefault();
+          handleAddShape(variant);
+        }
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        spaceHeldRef.current = false;
+        setSpaceHeld(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, undoStack, redoStack]);
+  }, [selectedIds, undoStack, redoStack, canvasObjectsState, positions]);
 
   // -------------------------------------------------------------------
-  // Background pan-drag (click-drag empty canvas space to pan) — also
-  // where a click while a placement tool is active drops a new object.
+  // Background drag: marquee-select by default (drag from empty canvas
+  // space to rubber-band select, like selecting files in Finder/Explorer)
+  // — hold Space to pan-drag instead.
   // -------------------------------------------------------------------
-  const panDrag = useRef<{
+  const bgDrag = useRef<{
+    mode: "pan" | "marquee";
     startX: number;
     startY: number;
     origin: { x: number; y: number };
+    additiveBase: string[];
     moved: boolean;
   } | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  );
 
-  const onBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
+  function onBackgroundPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("[data-canvas-item]")) return;
-    panDrag.current = { startX: e.clientX, startY: e.clientY, origin: panRef.current, moved: false };
+    bgDrag.current = {
+      mode: spaceHeldRef.current ? "pan" : "marquee",
+      startX: e.clientX,
+      startY: e.clientY,
+      origin: panRef.current,
+      additiveBase: e.shiftKey ? selectedIds : [],
+      moved: false,
+    };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
-  const onBackgroundPointerMove = useCallback((e: React.PointerEvent) => {
-    const drag = panDrag.current;
+  }
+
+  function onBackgroundPointerMove(e: React.PointerEvent) {
+    const drag = bgDrag.current;
     if (!drag) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     if (Math.abs(dx) > CLICK_THRESHOLD || Math.abs(dy) > CLICK_THRESHOLD) drag.moved = true;
-    setPan({ x: drag.origin.x + dx, y: drag.origin.y + dy });
-  }, []);
-  const onBackgroundPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      const drag = panDrag.current;
-      panDrag.current = null;
-      if (!drag) return;
-      if (!drag.moved && tool !== "select") {
-        const rect = viewportRef.current?.getBoundingClientRect();
-        if (rect) {
-          const cx = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
-          const cy = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
-          void createObjectAt(tool, cx, cy);
-        }
-        setTool("select");
-      } else if (!drag.moved) {
-        setSelectedId(null);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tool],
-  );
 
-  async function createObjectAt(type: CanvasObjectType, cx: number, cy: number) {
+    if (drag.mode === "pan") {
+      setPan({ x: drag.origin.x + dx, y: drag.origin.y + dy });
+      return;
+    }
+
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const ox = rect?.left ?? 0;
+    const oy = rect?.top ?? 0;
+    const x0 = drag.startX - ox;
+    const y0 = drag.startY - oy;
+    const x1 = e.clientX - ox;
+    const y1 = e.clientY - oy;
+    const screenRect = {
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      w: Math.abs(x1 - x0),
+      h: Math.abs(y1 - y0),
+    };
+    setMarqueeRect(screenRect);
+
+    const canvasRect = {
+      x: (screenRect.x - panRef.current.x) / zoomRef.current,
+      y: (screenRect.y - panRef.current.y) / zoomRef.current,
+      w: screenRect.w / zoomRef.current,
+      h: screenRect.h / zoomRef.current,
+    };
+    const allIds = [...visibleItems.map((i) => i.id), ...canvasObjectsState.map((o) => o.id)];
+    const hitIds = allIds.filter((id) => {
+      const pos = positions[id];
+      return pos && rectsIntersect(canvasRect, pos);
+    });
+    setSelectedIds(Array.from(new Set([...drag.additiveBase, ...hitIds])));
+  }
+
+  function onBackgroundPointerUp() {
+    const drag = bgDrag.current;
+    bgDrag.current = null;
+    if (!drag) return;
+    if (drag.mode === "marquee") {
+      setMarqueeRect(null);
+      if (!drag.moved) {
+        setSelectedIds([]);
+        setEditingId(null);
+      }
+    }
+  }
+
+  function viewportCenterCanvasCoords(): { x: number; y: number } {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: (rect.width / 2 - panRef.current.x) / zoomRef.current,
+      y: (rect.height / 2 - panRef.current.y) / zoomRef.current,
+    };
+  }
+
+  async function createObjectAt(
+    type: CanvasObjectType,
+    cx: number,
+    cy: number,
+    shapeVariant?: CanvasShapeVariant,
+  ) {
     const z = ++maxZ.current;
-    const input = defaultObjectFor(type, cx, cy, z);
+    const input = defaultObjectFor(type, cx, cy, z, shapeVariant);
     try {
       const created = await createObjectOnServer(input);
       setCanvasObjectsState((prev) => [...prev, created]);
@@ -473,8 +680,11 @@ export function CollectionCanvas({
         ...prev,
         [created.id]: { x: created.x, y: created.y, w: created.w, h: created.h, zIndex: created.zIndex },
       }));
-      setSelectedId(created.id);
-      setPendingFocusId(created.id);
+      setSelectedIds([created.id]);
+      if (type === "sticky" || type === "text") {
+        setEditingId(created.id);
+        setPendingFocusId(created.id);
+      }
       pushUndo({ type: "object-create", obj: created });
     } catch (err) {
       console.error(err);
@@ -482,76 +692,135 @@ export function CollectionCanvas({
     }
   }
 
+  // One-shot "add" actions — drop the new thing centered in the current
+  // view immediately, no second click on the canvas required.
+  function handleAddSticky() {
+    const { x, y } = viewportCenterCanvasCoords();
+    void createObjectAt("sticky", x, y);
+  }
+  function handleAddText() {
+    const { x, y } = viewportCenterCanvasCoords();
+    void createObjectAt("text", x, y);
+  }
+  function handleAddShape(variant: CanvasShapeVariant) {
+    const { x, y } = viewportCenterCanvasCoords();
+    void createObjectAt("shape", x, y, variant);
+  }
+  function handleAddFrame() {
+    const { x, y } = viewportCenterCanvasCoords();
+    void createObjectAt("frame", x, y);
+  }
+
   // -------------------------------------------------------------------
-  // Per-node drag (move a card/object on the canvas, persisted on
-  // release). Shared between items and canvas objects — the only branch
-  // is what a plain click (no movement) does.
+  // Per-node drag (move a card/object, or the whole selection together
+  // if the node being dragged is part of a multi-selection). Persisted
+  // on release; a plain click (no movement) selects/opens/edits instead.
   // -------------------------------------------------------------------
   const nodeDrag = useRef<{
-    ref: NodeRef;
+    refs: NodeRef[];
+    primaryId: string;
     startX: number;
     startY: number;
-    base: Position;
+    bases: Record<string, Position>;
     moved: boolean;
   } | null>(null);
 
-  const onNodePointerDown = useCallback(
-    (e: React.PointerEvent, ref: NodeRef) => {
-      // Let clicks/drags inside an editable field behave natively (text
-      // selection, caret placement) instead of moving the whole node —
-      // selection is instead driven by the field's own onFocus.
-      const target = e.target as HTMLElement;
-      if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
-      e.stopPropagation();
-      const pos = positions[ref.id];
-      if (!pos) return;
-      nodeDrag.current = { ref, startX: e.clientX, startY: e.clientY, base: pos, moved: false };
-      target.setPointerCapture(e.pointerId);
-    },
-    [positions],
-  );
+  function onNodePointerDown(e: React.PointerEvent, ref: NodeRef) {
+    // While actively editing this object's text, let clicks/drags behave
+    // natively (caret placement, text selection) instead of moving it.
+    if (ref.kind === "object" && editingIdRef.current === ref.id) return;
 
-  const onNodePointerMove = useCallback(
-    (e: React.PointerEvent, ref: NodeRef) => {
-      const drag = nodeDrag.current;
-      if (!drag || drag.ref.id !== ref.id) return;
-      const dx = (e.clientX - drag.startX) / zoomRef.current;
-      const dy = (e.clientY - drag.startY) / zoomRef.current;
-      if (Math.abs(dx) > CLICK_THRESHOLD || Math.abs(dy) > CLICK_THRESHOLD) {
-        drag.moved = true;
-      }
-      if (drag.moved) {
-        setPositions((prev) => ({
-          ...prev,
-          [ref.id]: { ...drag.base, x: drag.base.x + dx, y: drag.base.y + dy },
-        }));
-      }
-    },
-    [setPositions],
-  );
+    const target = e.target as HTMLElement;
+    // Block the browser's default mousedown->focus on a text field so a
+    // first click can mean "select" without immediately jumping into
+    // edit mode — see onNodePointerUp.
+    e.preventDefault();
+    e.stopPropagation();
 
-  const onNodePointerUp = useCallback(
-    (e: React.PointerEvent, ref: NodeRef) => {
-      const drag = nodeDrag.current;
-      nodeDrag.current = null;
-      if (!drag || drag.ref.id !== ref.id) return;
-      if (!drag.moved) {
-        if (ref.kind === "item") onItemClick(ref.id);
-        else setSelectedId(ref.id);
+    const isGroupMember = selectedIds.length > 1 && selectedIds.includes(ref.id);
+    const refs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
+    const bases: Record<string, Position> = {};
+    for (const r of refs) {
+      const p = positions[r.id];
+      if (p) bases[r.id] = p;
+    }
+    if (Object.keys(bases).length === 0) return;
+
+    nodeDrag.current = { refs, primaryId: ref.id, startX: e.clientX, startY: e.clientY, bases, moved: false };
+    target.setPointerCapture(e.pointerId);
+  }
+
+  function onNodePointerMove(e: React.PointerEvent, ref: NodeRef) {
+    const drag = nodeDrag.current;
+    if (!drag || drag.primaryId !== ref.id) return;
+    const dx = (e.clientX - drag.startX) / zoomRef.current;
+    const dy = (e.clientY - drag.startY) / zoomRef.current;
+    if (Math.abs(dx) > CLICK_THRESHOLD || Math.abs(dy) > CLICK_THRESHOLD) drag.moved = true;
+    if (drag.moved) {
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const r of drag.refs) {
+          const base = drag.bases[r.id];
+          if (base) next[r.id] = { ...base, x: base.x + dx, y: base.y + dy };
+        }
+        return next;
+      });
+    }
+  }
+
+  function onNodePointerUp(e: React.PointerEvent, ref: NodeRef) {
+    const drag = nodeDrag.current;
+    nodeDrag.current = null;
+    if (!drag || drag.primaryId !== ref.id) return;
+
+    if (!drag.moved) {
+      if (ref.kind === "item") {
+        setSelectedIds([]);
+        setEditingId(null);
+        onItemClick(ref.id);
         return;
       }
-      const nextZ = ++maxZ.current;
-      const finalPos = { ...positions[ref.id], zIndex: nextZ };
-      setPositions((prev) => ({ ...prev, [ref.id]: finalPos }));
-      pushUndo({ type: "position", ref, before: drag.base, after: finalPos });
-      persistPosition(ref, finalPos);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [collectionSlug, onItemClick, positions],
-  );
+      const obj = canvasObjectsState.find((o) => o.id === ref.id);
+      const hasText = obj && (obj.type === "sticky" || obj.type === "text" || obj.type === "frame");
+      const wasSelectedAlone = selectedIds.length === 1 && selectedIds[0] === ref.id;
+      if (e.shiftKey) {
+        setSelectedIds((prev) =>
+          prev.includes(ref.id) ? prev.filter((id) => id !== ref.id) : [...prev, ref.id],
+        );
+        setEditingId(null);
+      } else if (wasSelectedAlone && hasText) {
+        setEditingId(ref.id);
+        setPendingFocusId(ref.id);
+      } else {
+        setSelectedIds([ref.id]);
+        setEditingId(null);
+      }
+      return;
+    }
+
+    const zBase = maxZ.current;
+    const updates: Record<string, Position> = {};
+    drag.refs.forEach((r, i) => {
+      updates[r.id] = { ...positions[r.id], zIndex: zBase + i + 1 };
+    });
+    maxZ.current = zBase + drag.refs.length;
+    setPositions((prev) => ({ ...prev, ...updates }));
+
+    if (drag.refs.length > 1) {
+      pushUndo({
+        type: "group-position",
+        refs: drag.refs,
+        before: drag.refs.map((r) => drag.bases[r.id]),
+        after: drag.refs.map((r) => updates[r.id]),
+      });
+    } else {
+      pushUndo({ type: "position", ref: drag.refs[0], before: drag.bases[drag.refs[0].id], after: updates[drag.refs[0].id] });
+    }
+    for (const r of drag.refs) persistPosition(r, updates[r.id]);
+  }
 
   // -------------------------------------------------------------------
-  // Corner resize handles (canvas objects only).
+  // Corner resize handles (single-selection canvas objects only).
   // -------------------------------------------------------------------
   const nodeResize = useRef<{
     ref: NodeRef;
@@ -601,6 +870,106 @@ export function CollectionCanvas({
   }
 
   // -------------------------------------------------------------------
+  // Align / distribute / reorder the current multi-selection.
+  // -------------------------------------------------------------------
+  function getSelectedPositions(): { id: string; pos: Position }[] {
+    return selectedIds
+      .map((id) => ({ id, pos: positions[id] }))
+      .filter((s): s is { id: string; pos: Position } => !!s.pos);
+  }
+  function commitGroupChange(sel: { id: string; pos: Position }[], updates: Record<string, Position>) {
+    const refs = sel.map((s) => nodeRefById(s.id));
+    setPositions((prev) => ({ ...prev, ...updates }));
+    if (refs.length > 1) {
+      pushUndo({
+        type: "group-position",
+        refs,
+        before: sel.map((s) => s.pos),
+        after: refs.map((r) => updates[r.id]),
+      });
+    }
+    for (const r of refs) persistPosition(r, updates[r.id]);
+  }
+  function handleAlign(edge: AlignEdge) {
+    const sel = getSelectedPositions();
+    if (sel.length < 2) return;
+    const minX = Math.min(...sel.map((s) => s.pos.x));
+    const maxX = Math.max(...sel.map((s) => s.pos.x + s.pos.w));
+    const minY = Math.min(...sel.map((s) => s.pos.y));
+    const maxY = Math.max(...sel.map((s) => s.pos.y + s.pos.h));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const updates: Record<string, Position> = {};
+    for (const { id, pos } of sel) {
+      switch (edge) {
+        case "left":
+          updates[id] = { ...pos, x: minX };
+          break;
+        case "right":
+          updates[id] = { ...pos, x: maxX - pos.w };
+          break;
+        case "center-h":
+          updates[id] = { ...pos, x: centerX - pos.w / 2 };
+          break;
+        case "top":
+          updates[id] = { ...pos, y: minY };
+          break;
+        case "bottom":
+          updates[id] = { ...pos, y: maxY - pos.h };
+          break;
+        case "center-v":
+          updates[id] = { ...pos, y: centerY - pos.h / 2 };
+          break;
+      }
+    }
+    commitGroupChange(sel, updates);
+  }
+  function handleDistribute(axis: DistributeAxis) {
+    const sel = getSelectedPositions();
+    if (sel.length < 3) {
+      toast.error("Select at least 3 to distribute");
+      return;
+    }
+    const updates: Record<string, Position> = {};
+    if (axis === "horizontal") {
+      const sorted = [...sel].sort((a, b) => a.pos.x - b.pos.x);
+      const totalW = sorted.reduce((s, x) => s + x.pos.w, 0);
+      const span = sorted[sorted.length - 1].pos.x + sorted[sorted.length - 1].pos.w - sorted[0].pos.x;
+      const gap = (span - totalW) / (sorted.length - 1);
+      let cursor = sorted[0].pos.x;
+      for (const { id, pos } of sorted) {
+        updates[id] = { ...pos, x: cursor };
+        cursor += pos.w + gap;
+      }
+    } else {
+      const sorted = [...sel].sort((a, b) => a.pos.y - b.pos.y);
+      const totalH = sorted.reduce((s, x) => s + x.pos.h, 0);
+      const span = sorted[sorted.length - 1].pos.y + sorted[sorted.length - 1].pos.h - sorted[0].pos.y;
+      const gap = (span - totalH) / (sorted.length - 1);
+      let cursor = sorted[0].pos.y;
+      for (const { id, pos } of sorted) {
+        updates[id] = { ...pos, y: cursor };
+        cursor += pos.h + gap;
+      }
+    }
+    commitGroupChange(sel, updates);
+  }
+  function handleBringToFront() {
+    const sel = getSelectedPositions().sort((a, b) => a.pos.zIndex - b.pos.zIndex);
+    if (sel.length === 0) return;
+    const updates: Record<string, Position> = {};
+    for (const { id, pos } of sel) updates[id] = { ...pos, zIndex: ++maxZ.current };
+    commitGroupChange(sel, updates);
+  }
+  function handleSendToBack() {
+    const sel = getSelectedPositions().sort((a, b) => a.pos.zIndex - b.pos.zIndex);
+    if (sel.length === 0) return;
+    const updates: Record<string, Position> = {};
+    for (const { id, pos } of sel) updates[id] = { ...pos, zIndex: --minZ.current };
+    commitGroupChange(sel, updates);
+  }
+
+  // -------------------------------------------------------------------
   // Canvas object content/style edits
   // -------------------------------------------------------------------
   const patchTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -618,7 +987,6 @@ export function CollectionCanvas({
   }
 
   function handleObjectTextFocus(id: string) {
-    setSelectedId(id);
     const obj = canvasObjectsState.find((o) => o.id === id);
     textEditStart.current[id] = obj?.text ?? "";
   }
@@ -639,6 +1007,7 @@ export function CollectionCanvas({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: obj?.text ?? "" }),
     });
+    setEditingId((cur) => (cur === id ? null : cur));
   }
 
   function handleObjectStyleChange(id: string, patch: CanvasObjectPatch) {
@@ -668,7 +1037,7 @@ export function CollectionCanvas({
       delete next[id];
       return next;
     });
-    if (selectedId === id) setSelectedId(null);
+    setSelectedIds((prev) => prev.filter((sid) => sid !== id));
     void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
   }
 
@@ -716,9 +1085,7 @@ export function CollectionCanvas({
         body: JSON.stringify({ collections: [collectionName] }),
       });
 
-      const rect = viewportRef.current?.getBoundingClientRect();
-      const cx = rect ? (rect.width / 2 - panRef.current.x) / zoomRef.current : 0;
-      const cy = rect ? (rect.height / 2 - panRef.current.y) / zoomRef.current : 0;
+      const { x: cx, y: cy } = viewportCenterCanvasCoords();
       const ratio = dims.width && dims.height ? dims.width / dims.height : 4 / 3;
       const w = 280;
       const h = w / ratio;
@@ -738,32 +1105,97 @@ export function CollectionCanvas({
   }
 
   // -------------------------------------------------------------------
-  // Export current view as PNG
+  // Export — cropped to fit all canvas content (not the current
+  // viewport, not the infinite canvas), with a choice of transparent or
+  // canvas-colored background.
   // -------------------------------------------------------------------
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  async function handleExport() {
-    if (!viewportRef.current) return;
+
+  function computeContentBounds() {
+    const ids = [...items.map((i) => i.id), ...canvasObjectsState.map((o) => o.id)];
+    const boxes = ids.map((id) => positions[id]).filter((p): p is Position => !!p);
+    if (boxes.length === 0) return null;
+    return {
+      minX: Math.min(...boxes.map((b) => b.x)),
+      minY: Math.min(...boxes.map((b) => b.y)),
+      maxX: Math.max(...boxes.map((b) => b.x + b.w)),
+      maxY: Math.max(...boxes.map((b) => b.y + b.h)),
+    };
+  }
+
+  async function handleExportConfirm(background: ExportBackground) {
+    const bounds = computeContentBounds();
+    const el = viewportRef.current;
+    if (!bounds || !el) {
+      toast.error("Nothing to export");
+      return;
+    }
     setExporting(true);
-    const wasSelected = selectedId;
-    setSelectedId(null); // hide selection chrome/handles from the export
+
+    const prevPan = panRef.current;
+    const prevZoom = zoomRef.current;
+    const prevSelected = selectedIds;
+    setSelectedIds([]);
+    setEditingId(null);
+
+    const width = bounds.maxX - bounds.minX + EXPORT_PADDING * 2;
+    const height = bounds.maxY - bounds.minY + EXPORT_PADDING * 2;
+    setPan({ x: -bounds.minX + EXPORT_PADDING, y: -bounds.minY + EXPORT_PADDING });
+    setZoom(1);
+
+    const prevWidth = el.style.width;
+    const prevHeight = el.style.height;
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+
     try {
-      await new Promise((r) => requestAnimationFrame(r));
-      const dataUrl = await toPng(viewportRef.current, { pixelRatio: 2, cacheBust: true });
+      // Two frames: one to let the state update commit, one for layout
+      // to settle at the new size before we rasterize it.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const bg =
+        background === "solid"
+          ? getComputedStyle(document.documentElement).getPropertyValue("--background").trim() ||
+            "#ffffff"
+          : undefined;
+      const dataUrl = await toPng(el, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: bg,
+        style: background === "transparent" ? { backgroundImage: "none" } : undefined,
+      });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${collectionSlug}-canvas.png`;
       a.click();
+      setExportDialogOpen(false);
     } catch (error) {
       console.error(error);
       toast.error("Couldn't export canvas");
     } finally {
+      el.style.width = prevWidth;
+      el.style.height = prevHeight;
+      setPan(prevPan);
+      setZoom(prevZoom);
+      setSelectedIds(prevSelected);
       setExporting(false);
-      setSelectedId(wasSelected);
     }
   }
 
-  const selectedObj = canvasObjectsState.find((o) => o.id === selectedId) ?? null;
+  const selectedObj =
+    selectedIds.length === 1 ? canvasObjectsState.find((o) => o.id === selectedIds[0]) ?? null : null;
   const selectedObjPos = selectedObj ? positions[selectedObj.id] : null;
+
+  const selectionBounds = useMemo(() => {
+    if (selectedIds.length < 2) return null;
+    const boxes = selectedIds.map((id) => positions[id]).filter((p): p is Position => !!p);
+    if (boxes.length === 0) return null;
+    const minX = Math.min(...boxes.map((b) => b.x));
+    const minY = Math.min(...boxes.map((b) => b.y));
+    const maxX = Math.max(...boxes.map((b) => b.x + b.w));
+    const maxY = Math.max(...boxes.map((b) => b.y + b.h));
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }, [selectedIds, positions]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -808,15 +1240,20 @@ export function CollectionCanvas({
       {/* Left tool dock */}
       <div className="pointer-events-none absolute left-4 top-1/2 z-20 -translate-y-1/2">
         <CanvasToolbar
-          tool={tool}
-          onToolChange={(t) => setTool((cur) => (cur === t ? "select" : t))}
+          onSelectTool={() => {
+            setSelectedIds([]);
+            setEditingId(null);
+          }}
           onAddImage={() => fileInputRef.current?.click()}
+          onAddSticky={handleAddSticky}
+          onAddText={handleAddText}
+          onAddShape={handleAddShape}
+          onAddFrame={handleAddFrame}
           onUndo={() => void undo()}
           onRedo={() => void redo()}
           canUndo={undoStack.length > 0}
           canRedo={redoStack.length > 0}
-          onExport={() => void handleExport()}
-          exporting={exporting}
+          onExport={() => setExportDialogOpen(true)}
         />
       </div>
       <input
@@ -825,6 +1262,13 @@ export function CollectionCanvas({
         accept="image/*"
         className="hidden"
         onChange={(e) => void handleImageFileChange(e)}
+      />
+
+      <CanvasExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        onExport={(bg) => void handleExportConfirm(bg)}
+        exporting={exporting}
       />
 
       {/* Zoom controls */}
@@ -867,9 +1311,7 @@ export function CollectionCanvas({
       </div>
       </div>
 
-      {/* Floating rich toolbar for the selected canvas object — screen
-          space, computed from pan/zoom rather than living inside the
-          scaled content layer so it never grows/shrinks with zoom. */}
+      {/* Floating rich toolbar for a single selected canvas object. */}
       {selectedObj && selectedObjPos && !exporting && (
         <div className="pointer-events-none absolute inset-0 z-30">
           <CanvasObjectToolbar
@@ -879,18 +1321,47 @@ export function CollectionCanvas({
             style={{
               position: "absolute",
               left: pan.x + (selectedObjPos.x + selectedObjPos.w / 2) * zoom,
-              top: pan.y + selectedObjPos.y * zoom - 12,
+              // Clamped so the toolbar never renders under the filter-chip
+              // pill when the selection sits near the top of the view.
+              top: Math.max(96, pan.y + selectedObjPos.y * zoom - 12),
               transform: "translate(-50%, -100%)",
             }}
           />
         </div>
       )}
 
+      {/* Align/distribute toolbar for a multi-selection. */}
+      {selectionBounds && !exporting && (
+        <div className="pointer-events-none absolute inset-0 z-30">
+          <CanvasAlignToolbar
+            onAlign={handleAlign}
+            onDistribute={handleDistribute}
+            onBringToFront={handleBringToFront}
+            onSendToBack={handleSendToBack}
+            onDelete={() => void handleDeleteSelection()}
+            style={{
+              position: "absolute",
+              left: pan.x + (selectionBounds.x + selectionBounds.w / 2) * zoom,
+              top: Math.max(96, pan.y + selectionBounds.y * zoom - 12),
+              transform: "translate(-50%, -100%)",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Marquee-select rectangle. */}
+      {marqueeRect && (
+        <div
+          className="pointer-events-none absolute z-10 rounded-sm border border-primary/50 bg-primary/10"
+          style={{ left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.w, height: marqueeRect.h }}
+        />
+      )}
+
       <div
         ref={viewportRef}
         className={cn(
           "dot-grid-bg h-full w-full touch-none",
-          tool === "select" ? "cursor-grab active:cursor-grabbing" : "cursor-crosshair",
+          spaceHeld ? "cursor-grab active:cursor-grabbing" : "cursor-default",
         )}
         style={{
           backgroundPosition: `${pan.x}px ${pan.y}px`,
@@ -902,8 +1373,8 @@ export function CollectionCanvas({
           onBackgroundPointerMove(e);
           onResizeHandlePointerMove(e);
         }}
-        onPointerUp={(e) => {
-          onBackgroundPointerUp(e);
+        onPointerUp={() => {
+          onBackgroundPointerUp();
           onResizeHandlePointerUp();
         }}
       >
@@ -915,6 +1386,7 @@ export function CollectionCanvas({
             const pos = positions[item.id];
             if (!pos) return null;
             const ref: NodeRef = { kind: "item", id: item.id };
+            const selected = selectedIds.includes(item.id);
             return (
               <div
                 key={item.id}
@@ -922,7 +1394,10 @@ export function CollectionCanvas({
                 onPointerDown={(e) => onNodePointerDown(e, ref)}
                 onPointerMove={(e) => onNodePointerMove(e, ref)}
                 onPointerUp={(e) => onNodePointerUp(e, ref)}
-                className="absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_10px_28px_-10px_rgba(0,0,0,0.5)] transition-shadow hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.6)]"
+                className={cn(
+                  "absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)] transition-shadow hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
+                  selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                )}
                 style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: pos.zIndex }}
               >
                 <CanvasItemBody item={item} />
@@ -934,7 +1409,8 @@ export function CollectionCanvas({
             const pos = positions[obj.id];
             if (!pos) return null;
             const ref: NodeRef = { kind: "object", id: obj.id };
-            const selected = selectedId === obj.id;
+            const selected = selectedIds.includes(obj.id);
+            const showHandles = selected && selectedIds.length === 1;
             return (
               <div
                 key={obj.id}
@@ -945,6 +1421,7 @@ export function CollectionCanvas({
                 className={cn(
                   "absolute touch-none select-none",
                   obj.type === "frame" ? "cursor-default" : "cursor-pointer",
+                  selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
                 )}
                 style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: pos.zIndex }}
               >
@@ -957,7 +1434,7 @@ export function CollectionCanvas({
                   onTextChange={(text) => handleObjectTextChange(obj.id, text)}
                   onTextBlur={() => handleObjectTextBlur(obj.id)}
                 />
-                {selected && (
+                {showHandles && (
                   <>
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-foreground/40" />
                     {(["nw", "ne", "sw", "se"] as const).map((handle) => (
@@ -980,6 +1457,12 @@ export function CollectionCanvas({
           })}
         </div>
       </div>
+
+      {exporting && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+          <span className="text-sm text-muted-foreground">Exporting…</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1066,7 +1549,7 @@ function CanvasObjectBody({
   if (obj.type === "sticky") {
     return (
       <div
-        className="flex h-full w-full flex-col rounded-md p-3 shadow-[0_10px_24px_-8px_rgba(0,0,0,0.35)]"
+        className="flex h-full w-full flex-col rounded-md p-3 shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)]"
         style={{ background: obj.fill ?? "#FDE68A" }}
       >
         <textarea
@@ -1097,14 +1580,65 @@ function CanvasObjectBody({
     );
   }
   if (obj.type === "shape") {
+    const variant = obj.shapeVariant ?? "rectangle";
+    if (variant === "rectangle" || variant === "ellipse") {
+      return (
+        <div
+          className="h-full w-full shadow-[0_3px_10px_-6px_rgba(0,0,0,0.2)]"
+          style={{
+            background: obj.fill ?? "#BFDBFE",
+            borderRadius: variant === "ellipse" ? "9999px" : 14,
+          }}
+        />
+      );
+    }
+    if (variant === "triangle") {
+      return (
+        <div
+          className="h-full w-full"
+          style={{ background: obj.fill ?? "#BFDBFE", clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" }}
+        />
+      );
+    }
+    // line / arrow / elbow-arrow — stroke-based, resized via the same
+    // bounding-box corner handles every other object uses (dragging a
+    // corner just redefines where the diagonal/elbow's endpoints fall).
+    const stroke = obj.fill ?? "#3B5BDB";
+    const markerId = `canvas-arrowhead-${obj.id}`;
     return (
-      <div
-        className="h-full w-full shadow-[0_8px_20px_-8px_rgba(0,0,0,0.3)]"
-        style={{
-          background: obj.fill ?? "#BFDBFE",
-          borderRadius: obj.shapeVariant === "ellipse" ? "9999px" : 14,
-        }}
-      />
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+        {variant !== "line" && (
+          <defs>
+            <marker id={markerId} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill={stroke} />
+            </marker>
+          </defs>
+        )}
+        {variant === "elbow-arrow" ? (
+          <path
+            d="M2,2 L98,2 L98,98"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            markerEnd={`url(#${markerId})`}
+          />
+        ) : (
+          <line
+            x1={2}
+            y1={2}
+            x2={98}
+            y2={98}
+            stroke={stroke}
+            strokeWidth={3}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            markerEnd={variant === "arrow" ? `url(#${markerId})` : undefined}
+          />
+        )}
+      </svg>
     );
   }
   // frame

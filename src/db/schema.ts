@@ -209,7 +209,14 @@ export const itemCollections = pgTable(
 export const canvasObjectTypeValues = ["sticky", "text", "shape", "frame"] as const;
 export type CanvasObjectType = (typeof canvasObjectTypeValues)[number];
 
-export const canvasShapeVariantValues = ["rectangle", "ellipse"] as const;
+export const canvasShapeVariantValues = [
+  "rectangle",
+  "ellipse",
+  "triangle",
+  "line",
+  "arrow",
+  "elbow-arrow",
+] as const;
 export type CanvasShapeVariant = (typeof canvasShapeVariantValues)[number];
 
 export const canvasFontFamilyValues = ["sans", "serif", "mono"] as const;

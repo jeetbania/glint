@@ -11,13 +11,19 @@ import {
   ChevronUp,
   Square,
   Circle,
+  Triangle,
+  Slash,
+  ArrowUpRight,
+  CornerDownRight,
   Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -25,8 +31,26 @@ import { cn } from "@/lib/utils";
 import type {
   ApiCanvasObject,
   CanvasFontFamily,
+  CanvasShapeVariant,
   CanvasTextAlign,
 } from "@/types/canvas-object";
+
+const SHAPE_VARIANT_ICON: Record<CanvasShapeVariant, typeof Square> = {
+  rectangle: Square,
+  ellipse: Circle,
+  triangle: Triangle,
+  line: Slash,
+  arrow: ArrowUpRight,
+  "elbow-arrow": CornerDownRight,
+};
+const SHAPE_VARIANT_LABEL: Record<CanvasShapeVariant, string> = {
+  rectangle: "Rectangle",
+  ellipse: "Ellipse",
+  triangle: "Triangle",
+  line: "Line",
+  arrow: "Arrow",
+  "elbow-arrow": "Elbow arrow",
+};
 
 const FONT_FAMILY_LABEL: Record<CanvasFontFamily, string> = {
   sans: "Sans",
@@ -83,6 +107,9 @@ export function CanvasObjectToolbar({
 }) {
   const hasText = obj.type === "sticky" || obj.type === "text";
   const hasFill = obj.type === "sticky" || obj.type === "shape" || obj.type === "frame";
+  const isStrokeShape =
+    obj.type === "shape" &&
+    (obj.shapeVariant === "line" || obj.shapeVariant === "arrow" || obj.shapeVariant === "elbow-arrow");
   const swatches = obj.type === "shape" ? TEXT_COLORS.concat(NOTE_COLORS) : NOTE_COLORS;
 
   return (
@@ -171,29 +198,47 @@ export function CanvasObjectToolbar({
         </>
       )}
 
-      {obj.type === "shape" && (
-        <>
-          <ToolbarToggle
-            label="Rectangle"
-            active={obj.shapeVariant === "rectangle"}
-            onClick={() => onChange({ shapeVariant: "rectangle" })}
-          >
-            <Square className="size-3.5" />
-          </ToolbarToggle>
-          <ToolbarToggle
-            label="Ellipse"
-            active={obj.shapeVariant === "ellipse"}
-            onClick={() => onChange({ shapeVariant: "ellipse" })}
-          >
-            <Circle className="size-3.5" />
-          </ToolbarToggle>
-          <span className="mx-0.5 h-4 w-px bg-border" />
-        </>
-      )}
+      {obj.type === "shape" &&
+        (() => {
+          const variant = obj.shapeVariant ?? "rectangle";
+          const Icon = SHAPE_VARIANT_ICON[variant];
+          return (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex h-7 items-center gap-1 rounded-full px-2 hover:bg-foreground/6">
+                  <Icon className="size-3.5" />
+                  <ChevronDown className="size-3 text-muted-foreground" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  {(["rectangle", "ellipse", "triangle"] as const).map((v) => {
+                    const ItemIcon = SHAPE_VARIANT_ICON[v];
+                    return (
+                      <DropdownMenuItem key={v} onClick={() => onChange({ shapeVariant: v })}>
+                        <ItemIcon className="size-4" />
+                        {SHAPE_VARIANT_LABEL[v]}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  {(["line", "arrow", "elbow-arrow"] as const).map((v) => {
+                    const ItemIcon = SHAPE_VARIANT_ICON[v];
+                    return (
+                      <DropdownMenuItem key={v} onClick={() => onChange({ shapeVariant: v })}>
+                        <ItemIcon className="size-4" />
+                        {SHAPE_VARIANT_LABEL[v]}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <span className="mx-0.5 h-4 w-px bg-border" />
+            </>
+          );
+        })()}
 
       {hasFill && (
         <ColorSwatchPicker
-          label={obj.type === "sticky" ? "Note color" : "Fill color"}
+          label={obj.type === "sticky" ? "Note color" : isStrokeShape ? "Stroke color" : "Fill color"}
           value={obj.fill ?? NOTE_COLORS[0]}
           colors={swatches}
           onChange={(fill) => onChange({ fill })}

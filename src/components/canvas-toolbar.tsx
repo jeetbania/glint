@@ -10,100 +10,138 @@ import {
   Undo2,
   Redo2,
   Download,
+  Square,
+  Circle,
+  Triangle,
+  Slash,
+  ArrowUpRight,
+  CornerDownRight,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { CanvasShapeVariant } from "@/types/canvas-object";
 
-export type CanvasTool = "select" | "sticky" | "text" | "shape" | "frame";
+const SHAPE_OPTIONS: {
+  variant: CanvasShapeVariant;
+  label: string;
+  icon: typeof Square;
+  shortcut: string;
+}[] = [
+  { variant: "rectangle", label: "Rectangle", icon: Square, shortcut: "R" },
+  { variant: "ellipse", label: "Ellipse", icon: Circle, shortcut: "E" },
+  { variant: "triangle", label: "Triangle", icon: Triangle, shortcut: "Y" },
+];
+const LINE_OPTIONS: {
+  variant: CanvasShapeVariant;
+  label: string;
+  icon: typeof Slash;
+  shortcut: string;
+}[] = [
+  { variant: "line", label: "Line", icon: Slash, shortcut: "L" },
+  { variant: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
+  { variant: "elbow-arrow", label: "Elbow arrow", icon: CornerDownRight, shortcut: "B" },
+];
 
-/** The FigJam-style left tool dock — mirrors the reference: a select tool,
- * four "place something new" tools, an undo/redo pair, and export, each
- * group separated by a hairline. Image is a one-shot action (opens a file
- * picker immediately) rather than a persistent tool, since there's no
- * further "draw" step once a file's picked. */
+/** The FigJam-style left tool dock. Every "add" button is a one-shot
+ * action — it drops the new thing centered in the current view
+ * immediately (matching how "add image" already had to work, since a
+ * file picker has no "click the canvas" step) rather than arming a mode
+ * that then waits for a follow-up click. "Select" doesn't toggle a mode
+ * either; it's just a clear-selection shortcut, kept visually "active"
+ * to match the reference's always-on cursor tool. */
 export function CanvasToolbar({
-  tool,
-  onToolChange,
+  onSelectTool,
   onAddImage,
+  onAddSticky,
+  onAddText,
+  onAddShape,
+  onAddFrame,
   onUndo,
   onRedo,
   canUndo,
   canRedo,
   onExport,
-  exporting,
 }: {
-  tool: CanvasTool;
-  onToolChange: (tool: CanvasTool) => void;
+  onSelectTool: () => void;
   onAddImage: () => void;
+  onAddSticky: () => void;
+  onAddText: () => void;
+  onAddShape: (variant: CanvasShapeVariant) => void;
+  onAddFrame: () => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onExport: () => void;
-  exporting: boolean;
 }) {
   return (
     <div className="glass-pill pointer-events-auto flex flex-col items-center gap-1 p-1.5">
-      <ToolButton
-        label="Select"
-        active={tool === "select"}
-        onClick={() => onToolChange("select")}
-      >
+      <ToolButton label="Select (clear selection)" active onClick={onSelectTool}>
         <MousePointer2 className="size-4" />
       </ToolButton>
 
-      <ToolButton label="Add image" active={false} onClick={onAddImage}>
+      <ToolButton label="Add image" onClick={onAddImage}>
         <ImagePlus className="size-4" />
       </ToolButton>
 
-      <ToolButton
-        label="Add sticky note"
-        active={tool === "sticky"}
-        onClick={() => onToolChange("sticky")}
-      >
+      <ToolButton label="Add sticky note" onClick={onAddSticky}>
         <StickyNote className="size-4" />
       </ToolButton>
 
-      <ToolButton
-        label="Add text"
-        active={tool === "text"}
-        onClick={() => onToolChange("text")}
-      >
+      <ToolButton label="Add text" onClick={onAddText}>
         <Type className="size-4" />
       </ToolButton>
 
-      <ToolButton
-        label="Add shape"
-        active={tool === "shape"}
-        onClick={() => onToolChange("shape")}
-      >
-        <Shapes className="size-4" />
-      </ToolButton>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Add shape"
+          title="Add shape"
+          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground data-popup-open:bg-foreground/6 data-popup-open:text-foreground"
+        >
+          <Shapes className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start" className="w-44">
+          {SHAPE_OPTIONS.map(({ variant, label, icon: Icon, shortcut }) => (
+            <DropdownMenuItem key={variant} onClick={() => onAddShape(variant)}>
+              <Icon className="size-4" />
+              {label}
+              <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          {LINE_OPTIONS.map(({ variant, label, icon: Icon, shortcut }) => (
+            <DropdownMenuItem key={variant} onClick={() => onAddShape(variant)}>
+              <Icon className="size-4" />
+              {label}
+              <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      <ToolButton
-        label="Add frame"
-        active={tool === "frame"}
-        onClick={() => onToolChange("frame")}
-      >
+      <ToolButton label="Add frame" onClick={onAddFrame}>
         <FrameIcon className="size-4" />
       </ToolButton>
 
       <span className="my-0.5 h-px w-6 bg-border" />
 
-      <ToolButton label="Undo" active={false} disabled={!canUndo} onClick={onUndo}>
+      <ToolButton label="Undo" disabled={!canUndo} onClick={onUndo}>
         <Undo2 className="size-4" />
       </ToolButton>
-      <ToolButton label="Redo" active={false} disabled={!canRedo} onClick={onRedo}>
+      <ToolButton label="Redo" disabled={!canRedo} onClick={onRedo}>
         <Redo2 className="size-4" />
       </ToolButton>
 
       <span className="my-0.5 h-px w-6 bg-border" />
 
-      <ToolButton
-        label="Export as PNG"
-        active={false}
-        disabled={exporting}
-        onClick={onExport}
-      >
+      <ToolButton label="Export" onClick={onExport}>
         <Download className="size-4" />
       </ToolButton>
     </div>
@@ -118,7 +156,7 @@ function ToolButton({
   children,
 }: {
   label: string;
-  active: boolean;
+  active?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -127,7 +165,6 @@ function ToolButton({
     <button
       type="button"
       aria-label={label}
-      aria-pressed={active}
       title={label}
       disabled={disabled}
       onClick={onClick}
