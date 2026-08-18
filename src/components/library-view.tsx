@@ -22,6 +22,7 @@ import { FilterMenu } from "@/components/filter-menu";
 import { SortMenu, type SortValue } from "@/components/sort-menu";
 import { SizeSlider } from "@/components/size-slider";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
 
 /** The main Library view is visuals-only by default (images + links) —
@@ -191,11 +192,7 @@ export function LibraryView({
       </div>
 
       <div className="flex-1 px-6 pb-6">
-        {!isLoading && items.length === 0 && (
-          <div className="flex h-64 items-center justify-center text-center text-sm text-muted-foreground">
-            {emptyMessage}
-          </div>
-        )}
+        {!isLoading && items.length === 0 && <EmptyLibraryState message={emptyMessage} />}
         {isLoading && items.length === 0 ? (
           <LibrarySkeleton breakpoints={breakpoints} />
         ) : (
@@ -226,6 +223,57 @@ export function LibraryView({
         itemId={selectedItemId}
         onOpenChange={(open) => !open && setSelectedItemId(null)}
       />
+    </div>
+  );
+}
+
+/** A blank pane with just a line of text read as bare/broken for a
+ * brand-new library rather than "start here" — a small fanned stack of
+ * flat, neutral "ghost cards" (mimicking the item cards that will
+ * eventually fill this grid: an image block + a couple of skeleton text
+ * lines) gives a first-run visitor something to look at without
+ * resorting to a decorative color/gradient illustration, which reads as
+ * generic AI-generated chrome rather than something considered. Soft
+ * elevation comes from a plain shadow + blur/opacity on the two back
+ * cards, not color — same restrained, monochrome language as the
+ * reference empty states this was modeled on. No animation: the
+ * reference is fully static, and a wall of colorful floating badges was
+ * exactly the wrong direction here. */
+function EmptyLibraryState({ message }: { message: string }) {
+  return (
+    <div className="flex h-[28rem] flex-col items-center justify-center gap-6 text-center">
+      <div className="relative flex h-28 w-56 items-center justify-center">
+        <GhostCard className="-translate-x-14 -rotate-6 opacity-50 blur-[1px]" />
+        <GhostCard className="translate-x-14 rotate-6 opacity-50 blur-[1px]" />
+        <GhostCard className="relative shadow-[0_12px_28px_-10px_rgba(0,0,0,0.35)]" />
+      </div>
+      <div>
+        <p className="font-heading text-base font-semibold tracking-heading">
+          Your library is empty
+        </p>
+        <p className="mt-1 max-w-[16rem] text-sm text-muted-foreground">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+/** One placeholder card in EmptyLibraryState's fanned stack — an image
+ * block plus two skeleton text bars, echoing an ItemCard's own shape
+ * without needing real content. Neutral --card/--border/--foreground
+ * tokens throughout, on purpose: this is chrome, not saved content, so
+ * it should read as quiet scaffolding rather than compete for attention
+ * with the colorful pastel/photo cards it'll eventually be replaced by. */
+function GhostCard({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "absolute h-28 w-40 rounded-xl border border-border/60 bg-card p-2.5",
+        className,
+      )}
+    >
+      <div className="h-14 w-full rounded-md bg-foreground/8" />
+      <div className="mt-2.5 h-2 w-3/4 rounded-full bg-foreground/8" />
+      <div className="mt-1.5 h-2 w-1/2 rounded-full bg-foreground/8" />
     </div>
   );
 }

@@ -256,7 +256,23 @@ html[data-desktop-shell] [data-titlebar-strip] {
    Wrapping the selector in :where(...) zeroes its specificity, so any
    plain utility class always wins regardless of which was compiled
    later — confirmed via the Settings dialog's close button, which
-   rendered inline instead of pinned top-right until this fix. */
+   rendered inline instead of pinned top-right until this fix.
+
+   Deliberately NO `-webkit-backdrop-filter` fallback alongside the
+   standard `backdrop-filter` below, even though that pairing is the
+   usual advice — Tailwind v4's build (Lightning CSS) was silently
+   DROPPING the standard property and keeping only the -webkit- one
+   whenever both were declared, confirmed by inspecting the actual
+   compiled/shipped CSS. WKWebView (the old Tauri desktop shell) reads
+   -webkit-backdrop-filter directly, so this was invisible there; Electron's
+   Chromium does not seem to apply blur from the prefixed property alone,
+   so it silently went from "always worked" to "no blur anywhere," first
+   noticed on the Collections folder tiles. Every current target (Electron/
+   Chromium, and Safari 16.4+) supports the unprefixed property, so
+   dropping the prefix entirely — rather than fighting the minifier to
+   keep both — is the actual fix. Re-check the compiled CSS output
+   (grep a built .next/static/chunks/*.css for "backdrop-filter") before
+   ever re-adding a -webkit- pair here. */
 @layer utilities {
   :where(.glass-panel, .glass-pill) {
     position: relative;
@@ -268,13 +284,11 @@ html[data-desktop-shell] [data-titlebar-strip] {
        reads as "glass" without paying for a heavy blur pass on every
        structural surface — cheaper to composite, same visual cue. */
     backdrop-filter: blur(16px) saturate(1.4);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
     box-shadow: var(--glass-shadow);
   }
   :where(.glass-pill) {
     background: var(--glass-bg);
     backdrop-filter: blur(12px) saturate(1.6);
-    -webkit-backdrop-filter: blur(12px) saturate(1.6);
     border-radius: 9999px;
   }
 
@@ -316,7 +330,6 @@ html[data-desktop-shell] [data-titlebar-strip] {
     isolation: isolate;
     overflow: hidden;
     backdrop-filter: blur(16px) saturate(1.5);
-    -webkit-backdrop-filter: blur(16px) saturate(1.5);
     box-shadow: var(--glass-shadow);
   }
   .glass-tint-mint {
@@ -480,7 +493,6 @@ html[data-desktop-shell] [data-titlebar-strip] {
       transparent
     );
     backdrop-filter: blur(20px) saturate(1.4);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
   }
 
   /* Sliding-pill tabs (ui/tabs.tsx) — ported from transitions.dev's

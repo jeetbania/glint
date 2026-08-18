@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SkeletonImage } from "@/components/skeleton-image";
+import { pastelTintClass } from "@/lib/pastel-tint";
 import { useItemActions } from "@/lib/use-item-actions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
@@ -77,7 +78,13 @@ export function ItemCard({
             // needs a stable selector to pin the card to its resting
             // transform/shadow while the library is being scrolled.
             "item-card group relative block w-full animate-in fade-in-0 zoom-in-95 duration-200 overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            !hasVisual && "glass-panel",
+            // Cards with no image of their own (notes, tasks, link
+            // previews that couldn't scrape an OG image) get a
+            // deterministic pastel glass tint instead of a uniform
+            // plain panel — a wall of identical cards otherwise reads
+            // as monotonous, and unlike an image card there's no photo
+            // to supply the color itself.
+            !hasVisual && pastelTintClass(item.id),
           )}
         >
           {item.type === "image" && item.blobUrl && (
