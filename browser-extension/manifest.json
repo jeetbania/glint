@@ -22,5 +22,12 @@
     "service_worker": "background.js"
   },
   "permissions": ["contextMenus", "notifications"],
-  "host_permissions": ["https://glint-jeetbania.vercel.app/*"]
+  "host_permissions": ["https://glint-jeetbania.vercel.app/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://glint-jeetbania.vercel.app/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

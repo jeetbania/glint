@@ -37,6 +37,29 @@ function notify(title, message) {
   });
 }
 
+// Pushes a "something new got saved" ping to any open Glint tab so it
+// can refresh immediately instead of waiting on its own background poll
+// (which exists purely as a fallback for contexts this can't reach —
+// the Tauri desktop app isn't a Chrome tab, another device entirely,
+// etc.). content-script.js is the other half of this, relaying the
+// message into a DOM event the page can actually listen for.
+async function notifyOpenTabs() {
+  let tabs;
+  try {
+    tabs = await chrome.tabs.query({ url: `${API_BASE}/*` });
+  } catch {
+    return;
+  }
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    chrome.tabs.sendMessage(tab.id, { type: "glint-item-saved" }).catch(() => {
+      // No content script listening in that tab yet (e.g. it was open
+      // before the extension loaded) — harmless, the 30s poll still
+      // catches it eventually.
+    });
+  }
+}
+
 // The API returns JSON error bodies like {"error": "..."} (or a Zod
 // flatten() object for validation failures) — pull out a readable
 // string instead of surfacing the raw JSON in a notification.
@@ -76,6 +99,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await saveLink(tab.url, tab.title);
     notify("Saved to Glint", tab.title || tab.url);
+    void notifyOpenTabs();
   } catch (err) {
     notify("Couldn't save to Glint", String(err.message || err));
   }
@@ -93,6 +117,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       await saveLink(info.linkUrl);
       notify("Link saved to Glint", info.linkUrl);
     }
+    void notifyOpenTabs();
   } catch (err) {
     notify("Couldn't save to Glint", String(err.message || err));
   }

@@ -4,6 +4,7 @@ import { Tag, LogOut } from "lucide-react";
 import { TopNav } from "@/components/top-nav";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
 import { ClipboardWatchProvider } from "@/components/clipboard-watch-provider";
+import { ExtensionSyncProvider } from "@/components/extension-sync-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -70,6 +71,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <PasteCaptureProvider />
       <ClipboardWatchProvider />
+      <ExtensionSyncProvider />
       <CommandPalette />
       <SoundUnlocker />
     </SwrProvider>
