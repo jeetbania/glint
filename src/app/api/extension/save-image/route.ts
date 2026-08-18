@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { put } from "@vercel/blob";
 import { imageSize } from "image-size";
+import sharp from "sharp";
 import { z } from "zod";
 import { createItem } from "@/lib/items";
 
@@ -10,6 +11,13 @@ const bodySchema = z.object({
   pageUrl: z.string().url().optional(),
   pageTitle: z.string().max(300).optional(),
 });
+
+// These are quick inspiration grabs, not archival-quality saves — capping
+// the long edge and re-encoding to WebP keeps blob storage/bandwidth (and
+// how long the item takes to load back in the app) way down without a
+// visible quality hit at the sizes they're actually viewed at.
+const MAX_DIMENSION = 1600;
+const WEBP_QUALITY = 82;
 
 /** Save-image entry point for the browser extension's right-click "Save
  * image to Glint" — the extension only ever hands over a raw image URL
@@ -55,30 +63,62 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const contentType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
-  if (!contentType.startsWith("image/")) {
+  const sourceContentType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+  if (!sourceContentType.startsWith("image/")) {
     return NextResponse.json({ error: "That URL isn't an image" }, { status: 400 });
   }
-  const buffer = Buffer.from(await res.arrayBuffer());
+  const sourceBuffer = Buffer.from(await res.arrayBuffer());
 
+  // Animated GIFs keep their original bytes — re-encoding through sharp
+  // without {animated: true} would flatten them to a single static
+  // frame, which is a worse trade than just leaving the file bigger.
+  // Everything else gets downsized + recompressed to WebP.
+  let outBuffer = sourceBuffer;
+  let outContentType = sourceContentType;
   let width: number | undefined;
   let height: number | undefined;
-  try {
-    const dims = imageSize(buffer);
-    width = dims.width;
-    height = dims.height;
-  } catch {
-    // Not every fetched image is a format image-size recognizes —
-    // dimensions just stay unset, matching how a normal upload already
-    // treats a bad/unreadable file (best-effort, not fatal).
+
+  if (sourceContentType !== "image/gif") {
+    try {
+      const { data, info } = await sharp(sourceBuffer)
+        .rotate() // bake in EXIF orientation before the dimensions below are read from it
+        .resize({
+          width: MAX_DIMENSION,
+          height: MAX_DIMENSION,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: WEBP_QUALITY })
+        .toBuffer({ resolveWithObject: true });
+      outBuffer = data;
+      outContentType = "image/webp";
+      width = info.width;
+      height = info.height;
+    } catch {
+      // Unrecognized/corrupt source format — fall back to storing the
+      // original bytes untouched rather than failing the whole save.
+      outBuffer = sourceBuffer;
+      outContentType = sourceContentType;
+    }
   }
 
-  const ext = contentType.split("/")[1] || "jpg";
+  if (width === undefined || height === undefined) {
+    try {
+      const dims = imageSize(outBuffer);
+      width = dims.width;
+      height = dims.height;
+    } catch {
+      // Not every fallback buffer is a format image-size recognizes
+      // either — dimensions just stay unset (best-effort, not fatal).
+    }
+  }
+
+  const ext = outContentType.split("/")[1] || "jpg";
   const pathname = `extension/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  const blob = await put(pathname, buffer, {
+  const blob = await put(pathname, outBuffer, {
     access: "public",
-    contentType,
+    contentType: outContentType,
   });
 
   const item = await createItem({
@@ -88,8 +128,8 @@ export async function POST(request: NextRequest) {
     blobPathname: blob.pathname,
     width,
     height,
-    fileSizeBytes: buffer.byteLength,
-    mimeType: contentType,
+    fileSizeBytes: outBuffer.byteLength,
+    mimeType: outContentType,
   });
 
   return NextResponse.json({ item }, { status: 201 });
