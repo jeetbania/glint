@@ -22,7 +22,7 @@ import { TagEditor } from "@/components/tag-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { useItemActions } from "@/lib/use-item-actions";
-import { hueForIndex, hueSwatch } from "@/lib/folder-color";
+import { hueSwatch } from "@/lib/folder-color";
 import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
@@ -49,7 +49,7 @@ import type { JSONContent } from "@tiptap/react";
  * areas/projects). */
 type SidebarView = "all" | "today" | string;
 
-type CollectionPreview = { id: string; name: string; slug: string; count: number };
+type CollectionPreview = { id: string; name: string; slug: string; count: number; colorHue: number };
 
 /** Apple Notes-style three-pane layout: a sidebar of folders (Collections
  * reused, since a note filing into a folder is exactly the same
@@ -195,12 +195,12 @@ export function NotesView() {
             </button>
           </div>
           <div className="space-y-0.5">
-            {collections.map((c, i) => (
+            {collections.map((c) => (
               <FolderRow
                 key={c.id}
                 label={c.name}
                 icon={Folder}
-                iconColor={hueSwatch(hueForIndex(i))}
+                iconColor={hueSwatch(c.colorHue)}
                 count={allNotes.filter((n) => n.collections.some((oc) => oc.slug === c.slug)).length}
                 active={view === c.slug}
                 onClick={() => setView(c.slug)}

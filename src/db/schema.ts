@@ -166,6 +166,13 @@ export const collections = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    // A hue angle from the curated FOLDER_HUE_PALETTE (lib/folder-color.ts)
+    // — assigned randomly at creation, editable live via the folder's
+    // right-click "Change color" menu. Nullable only so existing rows
+    // from before this column existed have a defined migration path
+    // (backfilled by scripts/add-collection-color-hue.ts); every code
+    // path that creates a collection sets it going forward.
+    colorHue: integer("color_hue"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

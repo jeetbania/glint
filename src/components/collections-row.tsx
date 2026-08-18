@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { animate } from "motion";
-import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
-import { hueForIndex } from "@/lib/folder-color";
+import { FOLDER_HUE_PALETTE, type FolderHue } from "@/lib/folder-color";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
   DropdownMenu,
@@ -31,15 +31,17 @@ type CollectionPreview = {
   name: string;
   slug: string;
   count: number;
+  colorHue: number;
   previews: string[];
 };
 
 // Colors: a single pastel hue per folder, rendered as translucent
 // frosted glass (blur + partial opacity) rather than an opaque fill.
-// Hue is assigned by position (golden-angle spacing, ~137.5° apart)
-// rather than hashed from the id, so no two folders can land on the
-// same color regardless of how many exist — and it's the same hue the
-// Notes sidebar uses for this folder's icon (see lib/folder-color.ts).
+// Hue is persisted per-collection (collections.color_hue — assigned
+// randomly at creation, editable live via the "Change color" menu below)
+// rather than derived from list position, so it stays stable regardless
+// of sort order and matches what the Notes/Tasks sidebars show for the
+// same folder (lib/folder-color.ts).
 const CARD_ASPECT = 426 / 362.09;
 
 // The manila-folder-tab silhouette (from the user's own Paper mockup),
@@ -71,18 +73,34 @@ const IMAGE_Z = [1, 2, 1]; // center paints on top, matching the reference
 
 function FolderTile({
   collection,
-  hue,
   active,
 }: {
   collection: CollectionPreview;
-  hue: number;
   active: boolean;
 }) {
-  const { rename, remove } = useCollectionActions();
+  const { rename, remove, setColor } = useCollectionActions();
   const router = useRouter();
   const [isRenaming, setIsRenaming] = useState(false);
+  const [isPickingColor, setIsPickingColor] = useState(false);
   const [draft, setDraft] = useState(collection.name);
   const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  // Click-away close for the color picker — it's a plain absolutely
+  // positioned overlay (not a Popover primitive: there's no dedicated
+  // trigger element to anchor one to, "Change color" lives inside the
+  // existing dropdown/context menu instead), so it needs its own outside
+  // -click handling rather than getting one for free.
+  useEffect(() => {
+    if (!isPickingColor) return;
+    function onPointerDown(e: PointerEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setIsPickingColor(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isPickingColor]);
 
   useEffect(() => {
     imgRefs.current.forEach((el, i) => {
@@ -132,6 +150,11 @@ function FolderTile({
       },
     },
     {
+      label: "Change color",
+      icon: Palette,
+      onClick: () => setIsPickingColor(true),
+    },
+    {
       label: "Delete",
       icon: Trash2,
       variant: "destructive",
@@ -152,7 +175,7 @@ function FolderTile({
         <div
           onPointerEnter={open}
           onPointerLeave={close}
-          style={{ "--folder-hue": hue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
+          style={{ "--folder-hue": collection.colorHue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
           className={cn(
             "group relative w-64 shrink-0 rounded-[18px] shadow-[0_10px_14px_-8px_rgba(0,0,0,0.18),0_3px_5px_-2px_rgba(0,0,0,0.1)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
@@ -267,6 +290,44 @@ function FolderTile({
               <Folder className="mb-4 size-8 text-white/80" />
             )}
           </div>
+
+          {/* Color picker — a plain overlay (not a Popover primitive; see
+              the pointerdown-close effect above for why) but styled and
+              animated the same as one. A sibling of the clipped layer for
+              the same reason the fanned previews are: it needs to float
+              past the card's own rounded edge, not get hard-clipped by
+              it. Only ever writes --folder-hue's underlying value via the
+              same PATCH -> mutate() path rename already uses — the blur/
+              glass CSS itself (backdrop-filter, the translucent
+              color-mix recipe) never changes, just which hue custom
+              property feeds it, so there's no way this can break the
+              glass effect the way a bug that touched the actual glass
+              rules could. */}
+          {isPickingColor && (
+            <div
+              ref={pickerRef}
+              className="glass-panel absolute left-1/2 top-full z-10 mt-2 flex w-44 -translate-x-1/2 animate-in flex-wrap justify-center gap-2 rounded-2xl fade-in-0 zoom-in-95 p-3 duration-150"
+            >
+              {FOLDER_HUE_PALETTE.map((paletteHue) => (
+                <button
+                  key={paletteHue}
+                  type="button"
+                  aria-label={`Set folder color to hue ${paletteHue}`}
+                  onClick={async () => {
+                    setIsPickingColor(false);
+                    await setColor(collection.slug, paletteHue as FolderHue);
+                  }}
+                  className={cn(
+                    "size-7 shrink-0 rounded-full ring-offset-2 ring-offset-background transition-transform hover:scale-110",
+                    collection.colorHue === paletteHue && "ring-2 ring-foreground",
+                  )}
+                  style={{
+                    background: `oklch(var(--folder-l) var(--folder-c) ${paletteHue})`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -310,13 +371,8 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
     // height, letting the masonry grid below squeeze it down to a
     // near-zero sliver instead of its real tile height.
     <div className="flex shrink-0 items-end gap-4 overflow-x-auto px-6 pb-1 pt-8">
-      {collections.map((c, i) => (
-        <FolderTile
-          key={c.id}
-          collection={c}
-          hue={hueForIndex(i)}
-          active={activeSlug === c.slug}
-        />
+      {collections.map((c) => (
+        <FolderTile key={c.id} collection={c} active={activeSlug === c.slug} />
       ))}
 
       {creating ? (

@@ -4,11 +4,12 @@ import {
   deleteCollection,
   getCollectionBySlug,
   getItemPositionsForCollection,
-  renameCollection,
+  updateCollection,
 } from "@/lib/collections";
 import { listItems } from "@/lib/items";
 import { listCanvasObjects } from "@/lib/canvas-objects";
-import { renameCollectionSchema } from "@/lib/validation";
+import { updateCollectionSchema } from "@/lib/validation";
+import type { FolderHue } from "@/lib/folder-color";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -40,11 +41,14 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await request.json().catch(() => null);
-  const parsed = renameCollectionSchema.safeParse(body);
+  const parsed = updateCollectionSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const collection = await renameCollection(existing.id, parsed.data.name);
+  const collection = await updateCollection(existing.id, {
+    name: parsed.data.name,
+    colorHue: parsed.data.colorHue as FolderHue | undefined,
+  });
   return NextResponse.json({ collection });
 }
 

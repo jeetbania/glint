@@ -25,7 +25,7 @@ import { useCollectionActions } from "@/lib/use-collection-actions";
 import { useItemActions } from "@/lib/use-item-actions";
 import { useSound } from "@/lib/use-sound";
 import { triggerConfetti } from "@/lib/confetti";
-import { hueForIndex, hueSwatch } from "@/lib/folder-color";
+import { hueSwatch } from "@/lib/folder-color";
 import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
@@ -52,7 +52,7 @@ import type { JSONContent } from "@tiptap/react";
  * what this app actually has. */
 type SidebarView = "all" | "today" | "completed" | string;
 
-type CollectionPreview = { id: string; name: string; slug: string; count: number };
+type CollectionPreview = { id: string; name: string; slug: string; count: number; colorHue: number };
 
 /** Things-3-style three-pane layout for tasks: a sidebar of smart views
  * + Lists (Collections), a checkbox list of tasks in the current view,
@@ -235,12 +235,12 @@ export function TasksView() {
             </button>
           </div>
           <div className="space-y-0.5">
-            {collections.map((c, i) => (
+            {collections.map((c) => (
               <ListRow
                 key={c.id}
                 label={c.name}
                 icon={Folder}
-                iconColor={hueSwatch(hueForIndex(i))}
+                iconColor={hueSwatch(c.colorHue)}
                 count={allTasks.filter((t) => t.collections.some((oc) => oc.slug === c.slug)).length}
                 active={view === c.slug}
                 onClick={() => setView(c.slug)}

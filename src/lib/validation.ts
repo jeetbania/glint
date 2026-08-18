@@ -6,6 +6,7 @@ import {
   canvasFontFamilyValues,
   canvasTextAlignValues,
 } from "@/db/schema";
+import { FOLDER_HUE_PALETTE } from "@/lib/folder-color";
 
 const colorEntry = z.object({
   hex: z.string(),
@@ -75,9 +76,26 @@ export const listItemsQuerySchema = z.object({
 export const createCollectionSchema = z.object({
   name: z.string().min(1).max(80),
 });
-export const renameCollectionSchema = z.object({
-  name: z.string().min(1).max(80),
-});
+// Backing the folder's right-click "Change color" editor as well as
+// rename — colorHue is checked against the curated FOLDER_HUE_PALETTE
+// (not just "any integer") so a live color change can only ever land on
+// one of the app's own designed swatches, never an arbitrary/off-palette
+// hue smuggled in through the API. At least one of name/colorHue must be
+// present, or there's nothing to update.
+export const updateCollectionSchema = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    colorHue: z
+      .number()
+      .int()
+      .refine((v) => (FOLDER_HUE_PALETTE as readonly number[]).includes(v), {
+        message: "Not one of the app's folder colors",
+      })
+      .optional(),
+  })
+  .refine((data) => data.name !== undefined || data.colorHue !== undefined, {
+    message: "Nothing to update",
+  });
 
 export const setItemPositionSchema = z.object({
   x: z.number(),

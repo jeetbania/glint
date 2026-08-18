@@ -2,12 +2,14 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { collections, itemCollections, items } from "@/db/schema";
 import { slugify } from "@/lib/slug";
+import { randomFolderHue, type FolderHue } from "@/lib/folder-color";
 
 export type CollectionWithPreview = {
   id: string;
   name: string;
   slug: string;
   count: number;
+  colorHue: number;
   previews: string[];
 };
 
@@ -23,6 +25,12 @@ export async function listCollectionsWithPreview(): Promise<
       id: collections.id,
       name: collections.name,
       slug: collections.slug,
+      // Legacy rows created before this column existed fall back to the
+      // first palette entry rather than null — every render site expects
+      // a real number, and the migration script (see
+      // scripts/add-collection-color-hue.ts) already backfills these in
+      // practice, so this coalesce is just a defensive floor.
+      colorHue: sql<number>`coalesce(${collections.colorHue}, 176)`,
       count: sql<number>`count(${itemCollections.itemId}) filter (where ${items.status} = 'active')::int`,
     })
     .from(collections)
@@ -75,15 +83,31 @@ export async function createCollection(name: string) {
     .limit(1);
   if (existing) return existing;
 
-  const [created] = await db.insert(collections).values({ name, slug }).returning();
+  const [created] = await db
+    .insert(collections)
+    .values({ name, slug, colorHue: randomFolderHue() })
+    .returning();
   return created;
 }
 
-export async function renameCollection(id: string, name: string) {
+/** Rename and/or recolor — the same live "right-click a folder" editor
+ * (collections-row.tsx) currently only ever sends one or the other, but
+ * this stays a single update so it costs one round trip either way. */
+export async function updateCollection(
+  id: string,
+  updates: { name?: string; colorHue?: FolderHue },
+) {
   const db = getDb();
+  const set: Partial<typeof collections.$inferInsert> = { updatedAt: new Date() };
+  if (updates.name !== undefined) {
+    set.name = updates.name;
+    set.slug = slugify(updates.name);
+  }
+  if (updates.colorHue !== undefined) set.colorHue = updates.colorHue;
+
   const [updated] = await db
     .update(collections)
-    .set({ name, slug: slugify(name), updatedAt: new Date() })
+    .set(set)
     .where(eq(collections.id, id))
     .returning();
   return updated ?? null;
@@ -108,7 +132,17 @@ export async function setItemCollections(
 ): Promise<void> {
   const db = getDb();
   const cleaned = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
-  const values = cleaned.map((name) => ({ name, slug: slugify(name) }));
+  // Each new collection gets its OWN random draw, not one shared value —
+  // saving an item into two brand-new collections at once shouldn't
+  // color them identically. onConflictDoUpdate below never touches
+  // colorHue, so an existing collection keeps whatever color it already
+  // has (including one the user picked via the live editor) rather than
+  // being re-randomized every time another item is filed into it.
+  const values = cleaned.map((name) => ({
+    name,
+    slug: slugify(name),
+    colorHue: randomFolderHue(),
+  }));
 
   let collectionIds: string[] = [];
   if (values.length > 0) {
