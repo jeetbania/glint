@@ -109,7 +109,14 @@ export function LibraryView({
     return `/api/items?${params.toString()}`;
   }, [fixedType, typeFilter, tag, color, sort, debouncedSearch]);
 
-  const { data, isLoading } = useSWR<{ items: ApiItem[] }>(queryKey);
+  // A slow background poll (not focus-revalidation — see swr-provider.tsx
+  // for why that's off globally) so items saved from outside the app
+  // itself (the browser extension, the desktop clipboard watcher on
+  // another device) show up here on their own within half a minute,
+  // instead of needing a manual reload to notice them.
+  const { data, isLoading } = useSWR<{ items: ApiItem[] }>(queryKey, {
+    refreshInterval: 30000,
+  });
 
   const items = data?.items ?? [];
   const breakpoints = {
