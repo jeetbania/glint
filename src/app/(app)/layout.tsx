@@ -63,7 +63,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </form>
             </div>
           </header>
-          <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+          <main data-app-main className="min-w-0 flex-1 overflow-y-auto">
+            {children}
+          </main>
         </div>
       </div>
       <PasteCaptureProvider />

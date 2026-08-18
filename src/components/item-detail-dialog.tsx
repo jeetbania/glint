@@ -166,16 +166,16 @@ function ItemDetailContent({
 
       <div
         data-item-detail-header
-        className="relative z-10 flex shrink-0 items-center justify-between px-6 py-3"
+        className="relative z-10 flex shrink-0 items-center justify-end px-6 py-3"
       >
-        <DialogPrimitive.Close render={<Button variant="outline" size="icon-sm" />}>
-          <X className="size-4" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
         <DialogPrimitive.Title className="sr-only">
           {item.title ?? item.type}
         </DialogPrimitive.Title>
         <div className="flex items-center gap-1.5">
+          <DialogPrimitive.Close render={<Button variant="outline" size="icon-sm" />}>
+            <X className="size-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
           {downloadHref && (
             <Button
               variant="outline"
@@ -212,8 +212,18 @@ function ItemDetailContent({
             text/input colors) to avoid a bright white panel sticking
             out against it. `.dark` here is a plain class selector in
             globals.css, not `html.dark`-scoped, so nesting it on this
-            one subtree re-themes just the sidebar. */}
-        <aside className="glass-panel dark hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 md:flex">
+            one subtree re-themes just the sidebar.
+            `text-foreground` is load-bearing, not decorative: `body`
+            already sets `color: var(--foreground)` using the SITE's
+            (light-mode) value, and that resolved color just inherits
+            down as a plain value — redeclaring `.dark` on this aside
+            only changes what `--foreground` computes to here, it
+            doesn't retroactively re-resolve `color` on anything that
+            didn't ask for it again. The Input's value text and the
+            TagEditor suggestion dropdown never set their own text
+            color, so without this they silently render in light
+            mode's near-black on this dark panel — invisible. */}
+        <aside className="glass-panel dark hidden w-80 shrink-0 flex-col gap-4 overflow-y-auto rounded-2xl p-4 text-foreground md:flex">
           <TiltThumbnail item={item} />
 
           <div className="space-y-1.5">

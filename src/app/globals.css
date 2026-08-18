@@ -152,14 +152,12 @@
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.45),
     0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
-  /* Same hue set as light mode, a bit deeper/richer so the wash
-     still reads as colorful against the near-black page instead of
-     washing out — the "different colours for light and dark mode" the
-     flat #2A2A2A frame never had. Dialed back alongside light mode's
-     pastel pass, just kept a touch richer since dark needs more chroma
-     to read at all against near-black. */
-  --folder-l: 58%;
-  --folder-c: 0.125;
+  /* Identical recipe to :root's, on purpose — an earlier pass gave dark
+     mode its own deeper/richer values, but the light-mode pastel wash is
+     exactly what the user wants everywhere, not a mode-specific
+     reinterpretation of it. */
+  --folder-l: 85%;
+  --folder-c: 0.095;
   --folder-alpha: 0.6;
 }
 
@@ -202,17 +200,15 @@ html[data-tauri-shell] [data-app-shell] {
 html[data-tauri-shell] [data-app-header] {
   padding-left: 4.5rem;
 }
-/* The item-detail lightbox is a full-viewport portal outside the app
-   shell (unlike data-app-header, it has no data-app-frame `p-2` inset
-   to compensate for), so it only needs the same LEFT clearance as the
-   header so the close button doesn't sit under the traffic lights —
-   its own py-3 already lines up vertically with them on its own, same
-   as data-app-header's does. An earlier extra `padding-top` here was
-   double-counting that clearance and pushed the button too far down. */
-html[data-tauri-shell] [data-item-detail-header] {
-  padding-left: 4.5rem;
+/* Every page's own leading padding (px-6 on most views) is unrelated to
+   the traffic lights — it was never meant to line up with the header's
+   4.5rem clearance above it, so the logo sat noticeably more indented
+   than the page content below it. Adding the gap here (3rem + the
+   common px-6 = 4.5rem) brings the two back into alignment instead of
+   touching every page's own padding individually. */
+html[data-tauri-shell] [data-app-main] {
+  padding-left: 3rem;
 }
-
 /* ---------------------------------------------------------------------
    Liquid glass — macOS-style frosted panels and pills, matching the
    backdrop-filter recipe measured directly off jeetcreates.cc's own

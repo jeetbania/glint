@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Masonry from "react-masonry-css";
 import useSWR, { useSWRConfig } from "swr";
 import { Search, Plus, StickyNote, CheckSquare } from "lucide-react";
@@ -63,12 +63,16 @@ export function LibraryView({
   // The command palette's "Recent" row deep-links here via ?item=<id>.
   // Navigating there while already on /library is a client-side
   // transition that doesn't remount this component, so the useState
-  // initializer above only fires the very first time — this effect
-  // catches the case where initialItemId changes on an already-mounted
-  // instance instead.
-  useEffect(() => {
+  // initializer above only fires the very first time. React's documented
+  // "adjusting state when a prop changes" pattern (compare + setState
+  // during render, not in an effect) catches the case where
+  // initialItemId changes on an already-mounted instance instead —
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevInitialItemId, setPrevInitialItemId] = useState(initialItemId);
+  if (initialItemId !== prevInitialItemId) {
+    setPrevInitialItemId(initialItemId);
     if (initialItemId) setSelectedItemId(initialItemId);
-  }, [initialItemId]);
+  }
   const { mutate: globalMutate } = useSWRConfig();
 
   async function createBlank(kind: "note" | "task") {

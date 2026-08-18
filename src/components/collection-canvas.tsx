@@ -137,6 +137,22 @@ function defaultObjectFor(
       };
     case "shape": {
       const isStroke = shapeVariant === "line" || shapeVariant === "arrow" || shapeVariant === "elbow-arrow";
+      // Straight line/arrow default to a thin horizontal strip (not a
+      // corner-to-corner diagonal) — rotate the handle afterward to
+      // angle it. Elbow-arrow keeps a real box since its bend needs
+      // both dimensions to read at all.
+      if (shapeVariant === "line" || shapeVariant === "arrow") {
+        return {
+          type,
+          x: cx - 100,
+          y: cy - 2,
+          w: 200,
+          h: 4,
+          zIndex,
+          fill: "#3B5BDB",
+          shapeVariant,
+        };
+      }
       return {
         type,
         x: cx - 80,
@@ -231,6 +247,35 @@ export function CollectionCanvas({
   }, [items, canvasObjectsState]);
   function nodeRefById(id: string): NodeRef {
     return { kind: kindById.get(id) === "item" ? "item" : "object", id };
+  }
+
+  /** Every item/object whose center currently falls inside a frame's
+   * bounds — recomputed on demand (not persisted), which is what lets
+   * "drag the frame, its contents come along" work without a parent
+   * field or any explicit reparenting step. Other frames are excluded
+   * so frames never drag each other. */
+  function getFrameContainedIds(framePos: Position, frameId: string): string[] {
+    const ids: string[] = [];
+    for (const it of items) {
+      const p = positions[it.id];
+      if (p && isCenterInside(p, framePos)) ids.push(it.id);
+    }
+    for (const o of canvasObjectsState) {
+      if (o.id === frameId || o.type === "frame") continue;
+      const p = positions[o.id];
+      if (p && isCenterInside(p, framePos)) ids.push(o.id);
+    }
+    return ids;
+  }
+  function isCenterInside(pos: Position, container: Position): boolean {
+    const cx = pos.x + pos.w / 2;
+    const cy = pos.y + pos.h / 2;
+    return (
+      cx >= container.x &&
+      cx <= container.x + container.w &&
+      cy >= container.y &&
+      cy <= container.y + container.h
+    );
   }
 
   const [pan, setPan] = useState({ x: 80, y: 60 });
@@ -738,7 +783,22 @@ export function CollectionCanvas({
     e.stopPropagation();
 
     const isGroupMember = selectedIds.length > 1 && selectedIds.includes(ref.id);
-    const refs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
+    let refs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
+
+    // Dragging a frame takes whatever's currently sitting inside it
+    // along for the ride — computed fresh from current positions right
+    // here (not a persisted parent relationship), so anything dropped
+    // into the frame since is picked up automatically and nothing needs
+    // reparenting when it's dragged back out.
+    if (!isGroupMember && ref.kind === "object") {
+      const obj = canvasObjectsState.find((o) => o.id === ref.id);
+      const framePos = positions[ref.id];
+      if (obj?.type === "frame" && framePos) {
+        const contained = getFrameContainedIds(framePos, ref.id);
+        if (contained.length > 0) refs = [ref, ...contained.map(nodeRefById)];
+      }
+    }
+
     const bases: Record<string, Position> = {};
     for (const r of refs) {
       const p = positions[r.id];
@@ -867,6 +927,62 @@ export function CollectionCanvas({
     if (!finalPos) return;
     pushUndo({ type: "position", ref: r.ref, before: r.base, after: finalPos });
     persistPosition(r.ref, finalPos);
+  }
+
+  // -------------------------------------------------------------------
+  // Rotate handle (single-selected canvas objects) — drag the handle
+  // above the shape to spin it around its own center, Figma-style. Lines
+  // default to perfectly horizontal on creation; this is how you angle
+  // them afterward.
+  // -------------------------------------------------------------------
+  const nodeRotate = useRef<{
+    id: string;
+    centerX: number;
+    centerY: number;
+    startAngle: number;
+    baseRotation: number;
+  } | null>(null);
+
+  function onRotateHandlePointerDown(e: React.PointerEvent, id: string, pos: Position, baseRotation: number) {
+    e.stopPropagation();
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const centerX = rect.left + panRef.current.x + (pos.x + pos.w / 2) * zoomRef.current;
+    const centerY = rect.top + panRef.current.y + (pos.y + pos.h / 2) * zoomRef.current;
+    const startAngle = (Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180) / Math.PI;
+    nodeRotate.current = { id, centerX, centerY, startAngle, baseRotation };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onRotateHandlePointerMove(e: React.PointerEvent) {
+    const r = nodeRotate.current;
+    if (!r) return;
+    const angle = (Math.atan2(e.clientY - r.centerY, e.clientX - r.centerX) * 180) / Math.PI;
+    let next = r.baseRotation + (angle - r.startAngle);
+    // Snap near the 8 compass points — makes it easy to land on a clean
+    // horizontal/vertical/45° angle instead of fighting the mouse.
+    const nearest45 = Math.round(next / 45) * 45;
+    if (Math.abs(next - nearest45) < 4) next = nearest45;
+    setCanvasObjectsState((prev) =>
+      prev.map((o) => (o.id === r.id ? { ...o, rotation: next } : o)),
+    );
+  }
+  function onRotateHandlePointerUp() {
+    const r = nodeRotate.current;
+    nodeRotate.current = null;
+    if (!r) return;
+    const obj = canvasObjectsState.find((o) => o.id === r.id);
+    if (!obj) return;
+    pushUndo({
+      type: "object-update",
+      id: r.id,
+      before: { rotation: r.baseRotation },
+      after: { rotation: obj.rotation },
+    });
+    void fetch(`/api/collections/${collectionSlug}/canvas-objects/${r.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rotation: obj.rotation }),
+    });
   }
 
   // -------------------------------------------------------------------
@@ -1372,10 +1488,12 @@ export function CollectionCanvas({
         onPointerMove={(e) => {
           onBackgroundPointerMove(e);
           onResizeHandlePointerMove(e);
+          onRotateHandlePointerMove(e);
         }}
         onPointerUp={() => {
           onBackgroundPointerUp();
           onResizeHandlePointerUp();
+          onRotateHandlePointerUp();
         }}
       >
         <div
@@ -1423,7 +1541,14 @@ export function CollectionCanvas({
                   obj.type === "frame" ? "cursor-default" : "cursor-pointer",
                   selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
                 )}
-                style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h, zIndex: pos.zIndex }}
+                style={{
+                  left: pos.x,
+                  top: pos.y,
+                  width: pos.w,
+                  height: pos.h,
+                  zIndex: pos.zIndex,
+                  transform: obj.rotation ? `rotate(${obj.rotation}deg)` : undefined,
+                }}
               >
                 <CanvasObjectBody
                   obj={obj}
@@ -1450,6 +1575,17 @@ export function CollectionCanvas({
                         )}
                       />
                     ))}
+                    {/* Rotate handle — a stem below the bottom edge with
+                        a grabbable circle at the end, Figma-style (kept
+                        below rather than above so it never collides with
+                        the floating style toolbar anchored above the
+                        selection). Drag it to spin the shape about its
+                        own center. */}
+                    <div className="pointer-events-none absolute bottom-0 left-1/2 h-6 w-px translate-x-[-50%] translate-y-6 bg-foreground/40" />
+                    <div
+                      onPointerDown={(e) => onRotateHandlePointerDown(e, obj.id, pos, obj.rotation ?? 0)}
+                      className="absolute bottom-0 left-1/2 size-3 translate-x-[-50%] translate-y-9 cursor-grab rounded-full border-2 border-foreground bg-background shadow-sm active:cursor-grabbing"
+                    />
                   </>
                 )}
               </div>
@@ -1628,9 +1764,9 @@ function CanvasObjectBody({
         ) : (
           <line
             x1={2}
-            y1={2}
+            y1={50}
             x2={98}
-            y2={98}
+            y2={50}
             stroke={stroke}
             strokeWidth={3}
             strokeLinecap="round"

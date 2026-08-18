@@ -86,6 +86,7 @@ export type CanvasObjectPatch = Partial<
     | "fill"
     | "shapeVariant"
     | "text"
+    | "rotation"
   >
 >;
 
