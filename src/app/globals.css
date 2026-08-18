@@ -171,6 +171,36 @@
   html {
     @apply font-sans;
   }
+
+  /* Thin, subtle scrollbars everywhere — a plain OS scrollbar (wide gray
+     rail, opaque) reads as heavy chrome against the glass aesthetic here.
+     scrollbar-color covers Firefox; the ::-webkit-scrollbar-* rules cover
+     the desktop app's WKWebView plus Chrome/Safari in the browser. The
+     thumb is drawn narrower than the scrollbar track itself (a
+     transparent border + background-clip: padding-box) so it reads as a
+     slim floating pill rather than a full-width bar. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent)
+      transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--foreground) 20%, transparent);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--foreground) 34%, transparent);
+    background-clip: padding-box;
+  }
 }
 
 /* Desktop shell (Tauri): the native window itself carries real OS
@@ -345,6 +375,22 @@ html[data-tauri-shell] [data-tauri-titlebar-strip] {
     margin-bottom: 0.75rem;
   }
 
+  /* Item cards must not re-trigger their hover lift/shadow while the
+     library is being scrolled. Without this, wheel/trackpad scrolling
+     (no actual mouse movement) still slides new cards under a stationary
+     cursor position — the browser keeps re-evaluating :hover as each one
+     passes underneath, replaying the lift+shadow transition dozens of
+     times a second, which is what read as general scroll "jitter" rather
+     than a smooth glide. ScrollJitterGuard (scroll-jitter-guard.tsx)
+     stamps data-scrolling on [data-app-main] for ~150ms after the last
+     scroll event; this pins every card to its resting transform/shadow
+     for that window regardless of what :hover currently matches. */
+  [data-app-main][data-scrolling] .item-card {
+    transition: none !important;
+    transform: none !important;
+    box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.35) !important;
+  }
+
   /* Minimal Tiptap content styling (no @tailwindcss/typography dependency) */
   .tiptap-content p {
     margin: 0.25rem 0;
@@ -510,6 +556,225 @@ html[data-tauri-shell] [data-tauri-titlebar-strip] {
       color-mix(in srgb, var(--foreground) 16%, transparent) 1px,
       transparent 1px
     );
+  }
+
+  /* ─── Image loading skeleton (skeleton-image.tsx) — ported from
+     jeetcreates-portfolio's ImageSkeleton.tsx: a dot grid with a soft
+     blob-shaped highlight that drifts and morphs across it, the
+     ChatGPT/Gemini-style "generating…" treatment minus the
+     generation-specific label/chrome, since this just means "the photo
+     hasn't arrived yet." Sits absolute inset-0 inside the same box the
+     real <Image> renders into, fading out once the photo's onLoad
+     fires. Canvas rides --muted (not a bespoke gray) so it reads as the
+     card's own resting surface color in both themes rather than a
+     foreign flash before the photo lands — dot/glow color the same way,
+     via color-mix on --foreground (matches .dot-grid-bg above), so
+     neither needs a separate dark-mode override. */
+  .img-skeleton {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: var(--muted);
+    pointer-events: none;
+    transition: opacity 280ms ease-out;
+  }
+  .img-skeleton-dots {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--foreground) 14%, transparent) 0.7px,
+      transparent 1.3px
+    );
+    background-size: 11px 11px;
+    background-repeat: space;
+  }
+  .img-skeleton-glow {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, var(--foreground) 1.1px, transparent 1.6px);
+    background-size: 11px 11px;
+    background-repeat: space;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, transparent 60%),
+      radial-gradient(ellipse at center, #000 0%, transparent 62%);
+    mask-image: radial-gradient(ellipse at center, #000 0%, transparent 60%),
+      radial-gradient(ellipse at center, #000 0%, transparent 62%);
+    -webkit-mask-repeat: no-repeat, no-repeat;
+    mask-repeat: no-repeat, no-repeat;
+  }
+  /* Four independent blob "personalities" — every skeleton used to run
+     the exact same keyframe animation, so any grid showing more than one
+     at once had their blobs drift in lockstep, which read as one
+     mechanical effect rather than several organic ones. skeleton-image
+     .tsx picks one of these 4 per mount (stable for that instance's
+     lifetime, see pickVariant there). Each variant gets its own travel
+     path AND its own morph/breathe duration plus a negative delay (so
+     they don't even launch in phase together). */
+  .img-skeleton-glow-1 {
+    -webkit-mask-size: 52% 46%, 40% 40%;
+    mask-size: 52% 46%, 40% 40%;
+    -webkit-mask-position: 16% 20%, 30% 32%;
+    mask-position: 16% 20%, 30% 32%;
+    animation: img-skel-morph-1 4.2s cubic-bezier(0.35, 1.55, 0.65, 1) infinite,
+      img-skel-breathe 1.9s cubic-bezier(0.66, 0, 0.34, 1) infinite;
+  }
+  .img-skeleton-glow-2 {
+    -webkit-mask-size: 44% 56%, 42% 38%;
+    mask-size: 44% 56%, 42% 38%;
+    -webkit-mask-position: 84% 18%, 64% 30%;
+    mask-position: 84% 18%, 64% 30%;
+    animation: img-skel-morph-2 5.1s cubic-bezier(0.35, 1.55, 0.65, 1) infinite -1.4s,
+      img-skel-breathe 2.3s cubic-bezier(0.66, 0, 0.34, 1) infinite -0.6s;
+  }
+  .img-skeleton-glow-3 {
+    -webkit-mask-size: 46% 46%, 34% 34%;
+    mask-size: 46% 46%, 34% 34%;
+    -webkit-mask-position: 18% 18%, 32% 30%;
+    mask-position: 18% 18%, 32% 30%;
+    animation: img-skel-morph-3 3.7s cubic-bezier(0.35, 1.55, 0.65, 1) infinite -2.1s,
+      img-skel-breathe 1.6s cubic-bezier(0.66, 0, 0.34, 1) infinite -1.1s;
+  }
+  .img-skeleton-glow-4 {
+    -webkit-mask-size: 38% 40%, 28% 28%;
+    mask-size: 38% 40%, 28% 28%;
+    -webkit-mask-position: 38% 36%, 48% 44%;
+    mask-position: 38% 36%, 48% 44%;
+    animation: img-skel-morph-4 4.7s cubic-bezier(0.35, 1.55, 0.65, 1) infinite -3.2s,
+      img-skel-breathe 2.1s cubic-bezier(0.66, 0, 0.34, 1) infinite -1.7s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .img-skeleton-glow-1,
+    .img-skeleton-glow-2,
+    .img-skeleton-glow-3,
+    .img-skeleton-glow-4 {
+      animation: none;
+      opacity: 0.75;
+    }
+  }
+}
+
+/* Clockwise loop around the frame edges. */
+@keyframes img-skel-morph-1 {
+  0%,
+  100% {
+    -webkit-mask-size: 52% 46%, 40% 40%;
+    mask-size: 52% 46%, 40% 40%;
+    -webkit-mask-position: 16% 20%, 30% 32%;
+    mask-position: 16% 20%, 30% 32%;
+  }
+  25% {
+    -webkit-mask-size: 46% 58%, 44% 38%;
+    mask-size: 46% 58%, 44% 38%;
+    -webkit-mask-position: 84% 16%, 66% 30%;
+    mask-position: 84% 16%, 66% 30%;
+  }
+  50% {
+    -webkit-mask-size: 60% 44%, 38% 46%;
+    mask-size: 60% 44%, 38% 46%;
+    -webkit-mask-position: 82% 84%, 62% 68%;
+    mask-position: 82% 84%, 62% 68%;
+  }
+  75% {
+    -webkit-mask-size: 48% 54%, 46% 40%;
+    mask-size: 48% 54%, 46% 40%;
+    -webkit-mask-position: 14% 82%, 34% 66%;
+    mask-position: 14% 82%, 34% 66%;
+  }
+}
+/* Counter-clockwise loop, opposite direction and a different starting
+   corner from variant 1. */
+@keyframes img-skel-morph-2 {
+  0%,
+  100% {
+    -webkit-mask-size: 44% 56%, 42% 38%;
+    mask-size: 44% 56%, 42% 38%;
+    -webkit-mask-position: 84% 18%, 64% 30%;
+    mask-position: 84% 18%, 64% 30%;
+  }
+  25% {
+    -webkit-mask-size: 58% 42%, 38% 46%;
+    mask-size: 58% 42%, 38% 46%;
+    -webkit-mask-position: 18% 16%, 34% 28%;
+    mask-position: 18% 16%, 34% 28%;
+  }
+  50% {
+    -webkit-mask-size: 48% 52%, 46% 40%;
+    mask-size: 48% 52%, 46% 40%;
+    -webkit-mask-position: 16% 82%, 32% 66%;
+    mask-position: 16% 82%, 32% 66%;
+  }
+  75% {
+    -webkit-mask-size: 54% 46%, 40% 44%;
+    mask-size: 54% 46%, 40% 44%;
+    -webkit-mask-position: 82% 84%, 64% 68%;
+    mask-position: 82% 84%, 64% 68%;
+  }
+}
+/* Diagonal crossing path — a genuinely different shape, not just a
+   reversed loop. */
+@keyframes img-skel-morph-3 {
+  0%,
+  100% {
+    -webkit-mask-size: 46% 46%, 34% 34%;
+    mask-size: 46% 46%, 34% 34%;
+    -webkit-mask-position: 18% 18%, 32% 30%;
+    mask-position: 18% 18%, 32% 30%;
+  }
+  25% {
+    -webkit-mask-size: 56% 50%, 42% 36%;
+    mask-size: 56% 50%, 42% 36%;
+    -webkit-mask-position: 78% 78%, 60% 64%;
+    mask-position: 78% 78%, 60% 64%;
+  }
+  50% {
+    -webkit-mask-size: 50% 58%, 38% 44%;
+    mask-size: 50% 58%, 38% 44%;
+    -webkit-mask-position: 80% 20%, 62% 32%;
+    mask-position: 80% 20%, 62% 32%;
+  }
+  75% {
+    -webkit-mask-size: 44% 48%, 36% 38%;
+    mask-size: 44% 48%, 36% 38%;
+    -webkit-mask-position: 20% 78%, 34% 64%;
+    mask-position: 20% 78%, 34% 64%;
+  }
+}
+/* Tighter clockwise orbit near center, smaller radius — a different
+   scale/rhythm of drift from the edge-hugging variants above. */
+@keyframes img-skel-morph-4 {
+  0%,
+  100% {
+    -webkit-mask-size: 38% 40%, 28% 28%;
+    mask-size: 38% 40%, 28% 28%;
+    -webkit-mask-position: 38% 36%, 48% 44%;
+    mask-position: 38% 36%, 48% 44%;
+  }
+  25% {
+    -webkit-mask-size: 44% 34%, 30% 26%;
+    mask-size: 44% 34%, 30% 26%;
+    -webkit-mask-position: 60% 42%, 66% 48%;
+    mask-position: 60% 42%, 66% 48%;
+  }
+  50% {
+    -webkit-mask-size: 36% 42%, 26% 30%;
+    mask-size: 36% 42%, 26% 30%;
+    -webkit-mask-position: 56% 62%, 62% 60%;
+    mask-position: 56% 62%, 62% 60%;
+  }
+  75% {
+    -webkit-mask-size: 40% 36%, 28% 28%;
+    mask-size: 40% 36%, 28% 28%;
+    -webkit-mask-position: 32% 58%, 44% 56%;
+    mask-position: 32% 58%, 44% 56%;
+  }
+}
+@keyframes img-skel-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

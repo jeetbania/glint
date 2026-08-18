@@ -5,6 +5,8 @@ import { TopNav } from "@/components/top-nav";
 import { PasteCaptureProvider } from "@/components/paste-capture-provider";
 import { ClipboardWatchProvider } from "@/components/clipboard-watch-provider";
 import { ExtensionSyncProvider } from "@/components/extension-sync-provider";
+import { ScrollJitterGuard } from "@/components/scroll-jitter-guard";
+import { SmoothScrollProvider } from "@/components/smooth-scroll-provider";
 import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
@@ -84,6 +86,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <PasteCaptureProvider />
       <ClipboardWatchProvider />
       <ExtensionSyncProvider />
+      <ScrollJitterGuard />
+      <SmoothScrollProvider />
       <CommandPalette />
       <SoundUnlocker />
     </SwrProvider>

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   FileText,
   CheckSquare,
@@ -12,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SkeletonImage } from "@/components/skeleton-image";
 import { useItemActions } from "@/lib/use-item-actions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
@@ -72,7 +72,11 @@ export function ItemCard({
           type="button"
           onClick={onClick}
           className={cn(
-            "group relative block w-full animate-in fade-in-0 zoom-in-95 duration-200 overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            // item-card is a plain marker class (not a style itself) —
+            // see globals.css's [data-scrolling] .item-card rule, which
+            // needs a stable selector to pin the card to its resting
+            // transform/shadow while the library is being scrolled.
+            "item-card group relative block w-full animate-in fade-in-0 zoom-in-95 duration-200 overflow-hidden rounded-xl text-left shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)] transition-[transform,box-shadow] hover:-translate-y-1 hover:shadow-[0_18px_36px_-12px_rgba(0,0,0,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             !hasVisual && "glass-panel",
           )}
         >
@@ -150,7 +154,7 @@ function ImageCardBody({
 
   return (
     <div className="relative w-full" style={{ aspectRatio: ratio }}>
-      <Image
+      <SkeletonImage
         src={item.blobUrl!}
         alt={item.title ?? "Saved image"}
         fill
@@ -209,7 +213,7 @@ function LinkCardBody({ item }: { item: ApiItem }) {
   if (item.previewImageUrl) {
     return (
       <div className="relative aspect-video w-full bg-muted">
-        <Image
+        <SkeletonImage
           src={item.previewImageUrl}
           alt=""
           fill

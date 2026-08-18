@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SkeletonImage } from "@/components/skeleton-image";
 import { TagEditor } from "@/components/tag-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
@@ -375,7 +376,7 @@ function MainVisual({
         className="relative max-h-[calc(100vh-11rem)] max-w-full transition-transform duration-150 ease-out"
         style={{ aspectRatio: ratio, height: "100%", width: "auto", transform: `scale(${zoom})` }}
       >
-        <Image
+        <SkeletonImage
           src={item.blobUrl}
           alt={item.title ?? "Saved image"}
           fill
