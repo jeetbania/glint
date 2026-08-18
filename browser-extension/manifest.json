@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Glint",
+  "description": "Save pages, links, and images straight to your Glint library.",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "Save this page to Glint",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["contextMenus", "notifications"],
+  "host_permissions": ["https://glint-jeetbania.vercel.app/*"]
+}
