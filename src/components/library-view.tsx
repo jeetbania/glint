@@ -22,7 +22,7 @@ import { FilterMenu } from "@/components/filter-menu";
 import { SortMenu, type SortValue } from "@/components/sort-menu";
 import { SizeSlider } from "@/components/size-slider";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
-import { cn } from "@/lib/utils";
+import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import type { ApiItem, ItemType } from "@/types/item";
 
 /** The main Library view is visuals-only by default (images + links) —
@@ -243,9 +243,15 @@ function EmptyLibraryState({ message }: { message: string }) {
   return (
     <div className="flex h-[28rem] flex-col items-center justify-center gap-6 text-center">
       <div className="relative flex h-28 w-56 items-center justify-center">
-        <GhostCard className="-translate-x-14 -rotate-6 opacity-50 blur-[1px]" />
-        <GhostCard className="translate-x-14 rotate-6 opacity-50 blur-[1px]" />
-        <GhostCard className="relative shadow-[0_12px_28px_-10px_rgba(0,0,0,0.35)]" />
+        <GhostCard className="h-28 w-40 -translate-x-14 -rotate-6 opacity-50 blur-[1px]">
+          <GhostCardBody />
+        </GhostCard>
+        <GhostCard className="h-28 w-40 translate-x-14 rotate-6 opacity-50 blur-[1px]">
+          <GhostCardBody />
+        </GhostCard>
+        <GhostCard className="relative h-28 w-40 shadow-[0_12px_28px_-10px_rgba(0,0,0,0.35)]">
+          <GhostCardBody />
+        </GhostCard>
       </div>
       <div>
         <p className="font-heading text-base font-semibold tracking-heading">
@@ -257,24 +263,16 @@ function EmptyLibraryState({ message }: { message: string }) {
   );
 }
 
-/** One placeholder card in EmptyLibraryState's fanned stack — an image
- * block plus two skeleton text bars, echoing an ItemCard's own shape
- * without needing real content. Neutral --card/--border/--foreground
- * tokens throughout, on purpose: this is chrome, not saved content, so
- * it should read as quiet scaffolding rather than compete for attention
- * with the colorful pastel/photo cards it'll eventually be replaced by. */
-function GhostCard({ className }: { className?: string }) {
+/** An image block plus two skeleton text bars, echoing an ItemCard's own
+ * shape without needing real content — see GhostCard (ui/ghost-card.tsx)
+ * for why this is neutral/monochrome rather than colorful. */
+function GhostCardBody() {
   return (
-    <div
-      className={cn(
-        "absolute h-28 w-40 rounded-xl border border-border/60 bg-card p-2.5",
-        className,
-      )}
-    >
+    <>
       <div className="h-14 w-full rounded-md bg-foreground/8" />
-      <div className="mt-2.5 h-2 w-3/4 rounded-full bg-foreground/8" />
-      <div className="mt-1.5 h-2 w-1/2 rounded-full bg-foreground/8" />
-    </div>
+      <GhostBar className="mt-2.5 w-3/4" />
+      <GhostBar className="mt-1.5 w-1/2" />
+    </>
   );
 }
 

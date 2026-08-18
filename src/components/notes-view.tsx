@@ -19,10 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { NoteEditor } from "@/components/note-editor";
 import { TagEditor } from "@/components/tag-editor";
+import { SortMenu, type SortValue } from "@/components/sort-menu";
+import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { useItemActions } from "@/lib/use-item-actions";
 import { hueSwatch } from "@/lib/folder-color";
+import { sortItems } from "@/lib/sort-items";
 import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
@@ -67,6 +70,7 @@ export function NotesView() {
 
   const [view, setView] = useState<SidebarView>("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortValue>("recent-desc");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const collections = collectionsData?.collections ?? [];
@@ -92,9 +96,14 @@ export function NotesView() {
     );
   }, [folderNotes, search]);
 
+  // "Most recent" keeps the Today/Yesterday/This week date-grouped
+  // layout — grouping by date wouldn't make sense against any other
+  // ordering (a name-sorted list interleaved with date headers reads as
+  // broken, not helpful), so any other sort falls back to one flat list.
+  const sortedNotes = useMemo(() => sortItems(visibleNotes, sort), [visibleNotes, sort]);
   const grouped = useMemo(
-    () => groupByDate(visibleNotes, (n) => n.updatedAt),
-    [visibleNotes],
+    () => (sort === "recent-desc" ? groupByDate(sortedNotes, (n) => n.updatedAt) : null),
+    [sortedNotes, sort],
   );
 
   const selected = allNotes.find((n) => n.id === selectedId) ?? null;
@@ -240,13 +249,13 @@ export function NotesView() {
             </Button>
           </div>
         </div>
-        <div className="shrink-0 px-4 pb-3">
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
           {/* The icon's positioned ancestor must be a snug wrapper around
               just the input — centering it against the outer div above
               (which also carries pb-3) skews `top-1/2` by that extra
               padding, since percentage centering is relative to the
               *containing block's* full height, not the input's. */}
-          <div className="relative">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -255,20 +264,29 @@ export function NotesView() {
               className="h-8 pl-9 text-sm"
             />
           </div>
+          <SortMenu value={sort} onChange={setSort} compact />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-          {visibleNotes.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No notes here yet.
-            </p>
-          )}
-          {grouped.map((group) => (
-            <div key={group.label} className="mb-2">
-              <p className="px-4 py-1.5 text-xs font-medium text-muted-foreground">
-                {group.label}
-              </p>
-              {group.items.map((note) => (
+          {visibleNotes.length === 0 && <NotesEmptyState hasNotesAtAll={allNotes.length > 0} />}
+          {grouped
+            ? grouped.map((group) => (
+                <div key={group.label} className="mb-2">
+                  <p className="px-4 py-1.5 text-xs font-medium text-muted-foreground">
+                    {group.label}
+                  </p>
+                  {group.items.map((note) => (
+                    <NoteRow
+                      key={note.id}
+                      note={note}
+                      active={selectedId === note.id}
+                      onSelect={() => setSelectedId(note.id)}
+                      onDeleted={() => selectedId === note.id && setSelectedId(null)}
+                    />
+                  ))}
+                </div>
+              ))
+            : sortedNotes.map((note) => (
                 <NoteRow
                   key={note.id}
                   note={note}
@@ -277,8 +295,6 @@ export function NotesView() {
                   onDeleted={() => selectedId === note.id && setSelectedId(null)}
                 />
               ))}
-            </div>
-          ))}
         </div>
       </div>
 
@@ -303,6 +319,36 @@ export function NotesView() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Same flat "ghost card" language as the Library's empty state (see
+ * ui/ghost-card.tsx), scaled down to a 2-card stack and given
+ * note-shaped content (plain text bars, no image block) for this
+ * narrower 320px list column — "according to the page's context," not
+ * a copy-paste of the Library's illustration. Distinguishes "there are
+ * genuinely no notes yet" from "the current folder/search has none" —
+ * the folder/search case shouldn't tell a returning user their notes
+ * vanished. */
+function NotesEmptyState({ hasNotesAtAll }: { hasNotesAtAll: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+      <div className="relative flex h-16 w-32 items-center justify-center">
+        <GhostCard className="h-16 w-24 -translate-x-8 -rotate-6 opacity-50 blur-[1px]">
+          <GhostBar className="w-2/3" />
+          <GhostBar className="mt-1.5 w-full" />
+          <GhostBar className="mt-1.5 w-1/2" />
+        </GhostCard>
+        <GhostCard className="relative h-16 w-24 shadow-[0_10px_22px_-10px_rgba(0,0,0,0.3)]">
+          <GhostBar className="w-2/3" />
+          <GhostBar className="mt-1.5 w-full" />
+          <GhostBar className="mt-1.5 w-1/2" />
+        </GhostCard>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {hasNotesAtAll ? "No notes match here." : "No notes yet."}
+      </p>
     </div>
   );
 }

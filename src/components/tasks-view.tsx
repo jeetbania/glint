@@ -26,7 +26,10 @@ import { useItemActions } from "@/lib/use-item-actions";
 import { useSound } from "@/lib/use-sound";
 import { triggerConfetti } from "@/lib/confetti";
 import { hueSwatch } from "@/lib/folder-color";
+import { sortItems } from "@/lib/sort-items";
 import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
+import { SortMenu, type SortValue } from "@/components/sort-menu";
+import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import { renderMenuActions, type MenuAction } from "@/components/ui/menu-actions";
 import {
   DropdownMenu,
@@ -71,6 +74,7 @@ export function TasksView() {
 
   const [view, setView] = useState<SidebarView>("all");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortValue>("recent-desc");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creatingList, setCreatingList] = useState(false);
   const [listDraft, setListDraft] = useState("");
@@ -100,15 +104,17 @@ export function TasksView() {
     );
   }, [listTasks, search]);
 
-  // Open tasks first (most recent first), completed sink to the bottom
-  // struck-through — same convention Things uses inside a List, rather
-  // than vanishing them entirely (that's what the dedicated "Completed"
-  // smart view is for).
+  // Open tasks first, completed sink to the bottom struck-through — same
+  // convention Things uses inside a List, rather than vanishing them
+  // entirely (that's what the dedicated "Completed" smart view is for).
+  // The chosen sort applies WITHIN each of those two groups, not across
+  // them — "Name (A-Z)" shouldn't interleave a done task ahead of an
+  // open one just because its title sorts earlier.
   const sortedTasks = useMemo(() => {
-    const open = visibleTasks.filter((t) => !t.completed);
-    const done = visibleTasks.filter((t) => t.completed);
+    const open = sortItems(visibleTasks.filter((t) => !t.completed), sort);
+    const done = sortItems(visibleTasks.filter((t) => t.completed), sort);
     return [...open, ...done];
-  }, [visibleTasks]);
+  }, [visibleTasks, sort]);
 
   const selected = allTasks.find((t) => t.id === selectedId) ?? null;
 
@@ -280,8 +286,8 @@ export function TasksView() {
             </Button>
           </div>
         </div>
-        <div className="shrink-0 px-4 pb-3">
-          <div className="relative">
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-3">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -290,14 +296,11 @@ export function TasksView() {
               className="h-8 pl-9 text-sm"
             />
           </div>
+          <SortMenu value={sort} onChange={setSort} compact />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-          {sortedTasks.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Nothing here yet.
-            </p>
-          )}
+          {sortedTasks.length === 0 && <TasksEmptyState hasTasksAtAll={allTasks.length > 0} />}
           {sortedTasks.map((task) => (
             <TaskRow
               key={task.id}
@@ -334,6 +337,52 @@ export function TasksView() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Same flat "ghost card" language as the Library's empty state (see
+ * ui/ghost-card.tsx), scaled down to a 2-card stack and given
+ * task-shaped content (a checkbox + title bar, then a couple of smaller
+ * checklist rows) instead of Notes' plain text lines or Library's image
+ * block — "according to the page's context." Distinguishes "there are
+ * genuinely no tasks yet" from "the current list/search/smart-view has
+ * none" the same way NotesEmptyState does. */
+function TasksEmptyState({ hasTasksAtAll }: { hasTasksAtAll: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+      <div className="relative flex h-16 w-32 items-center justify-center">
+        <GhostCard className="h-16 w-24 -translate-x-8 -rotate-6 opacity-50 blur-[1px]">
+          <GhostChecklistBody />
+        </GhostCard>
+        <GhostCard className="relative h-16 w-24 shadow-[0_10px_22px_-10px_rgba(0,0,0,0.3)]">
+          <GhostChecklistBody />
+        </GhostCard>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {hasTasksAtAll ? "No tasks match here." : "No tasks yet."}
+      </p>
+    </div>
+  );
+}
+
+function GhostChecklistBody() {
+  return (
+    <>
+      <div className="flex items-center gap-1.5">
+        <span className="size-2.5 shrink-0 rounded-full border-[1.5px] border-foreground/15" />
+        <GhostBar className="w-2/3" />
+      </div>
+      <div className="mt-2 space-y-1.5 pl-[1rem]">
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 shrink-0 rounded-[2px] border border-foreground/15" />
+          <GhostBar className="h-1.5 w-full" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 shrink-0 rounded-[2px] border border-foreground/15" />
+          <GhostBar className="h-1.5 w-2/3" />
+        </div>
+      </div>
+    </>
   );
 }
 

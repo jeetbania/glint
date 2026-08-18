@@ -20,9 +20,14 @@ const SORT_OPTIONS: { value: SortValue; label: string }[] = [
 export function SortMenu({
   value,
   onChange,
+  compact = false,
 }: {
   value: SortValue;
   onChange: (value: SortValue) => void;
+  /** Icon-only trigger (no label text) for narrow contexts — the Notes/
+   * Tasks list column, at 320px total, doesn't have room next to the
+   * search box for a labeled button the way the Library toolbar does. */
+  compact?: boolean;
 }) {
   const current = SORT_OPTIONS.find((o) => o.value === value);
 
@@ -30,10 +35,16 @@ export function SortMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button size="sm" variant="outline" className="gap-1.5">
-            <ArrowUpDown className="size-3.5" />
-            {current?.label ?? "Sort"}
-          </Button>
+          compact ? (
+            <Button size="icon-sm" variant="outline" aria-label={`Sort: ${current?.label ?? "Sort"}`}>
+              <ArrowUpDown className="size-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <ArrowUpDown className="size-3.5" />
+              {current?.label ?? "Sort"}
+            </Button>
+          )
         }
       />
       <DropdownMenuContent align="end">
