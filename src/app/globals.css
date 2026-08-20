@@ -219,13 +219,26 @@ html[data-desktop-shell] body {
    layout) that no app UI shares — so the header goes back to being a
    normal part of the floating rounded card, identical in the browser
    and the desktop app, and none of these offset hacks are needed
-   anymore. macOS only (data-desktop-shell="darwin"): Windows uses
-   Electron's normal framed window (electron/main.js only sets
-   titleBarStyle/trafficLightPosition on darwin), which already draws
-   its own native minimize/maximize/close controls above the page, so
-   there's no traffic-light row to reserve this space for there — it'd
-   just be dead space stacked under the real Windows titlebar. */
-html[data-desktop-shell="darwin"] [data-titlebar-strip] {
+   anymore. macOS only: Windows uses Electron's normal framed window
+   (electron/main.js only sets titleBarStyle/trafficLightPosition on
+   darwin), which already draws its own native minimize/maximize/close
+   controls above the page, so there's no traffic-light row to reserve
+   this space for there — it'd just be dead space stacked under the
+   real Windows titlebar.
+
+   Excluding win32/linux rather than requiring an exact "darwin" match
+   on purpose: this page is fetched live from production the instant
+   it deploys, but an already-installed desktop app's native shell
+   (main.js/preload.js, the part that actually sets this attribute) only
+   updates when someone re-downloads and reinstalls it. An older shell
+   that predates platform detection reports "" here, not "darwin" — a
+   strict equality check would silently collapse the strip for every
+   already-installed Mac user the moment this page redeploys, which is
+   exactly what happened before this comment existed. Falling back to
+   "reserve the strip" for anything that isn't explicitly a non-mac
+   platform keeps old installs working correctly in the meantime. */
+html[data-desktop-shell]:not([data-desktop-shell="win32"]):not([data-desktop-shell="linux"])
+  [data-titlebar-strip] {
   height: 1.5rem;
   /* Makes the strip window-draggable — Electron's equivalent of what
      Tauri's data-tauri-drag-region attribute used to do, just a CSS
