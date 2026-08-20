@@ -28,6 +28,15 @@ export async function putBlob(blob: Blob, mimeType: string): Promise<string> {
   return id;
 }
 
+/** The raw Blob itself (not a renderable object URL) — for anything
+ * that needs the actual bytes, like sending an image to an AI provider
+ * for on-demand categorization (see lib/ai/categorize.ts). */
+export async function getBlob(id: string): Promise<Blob | null> {
+  const db = await getLocalDb();
+  const row = await db.get("blobs", id);
+  return row?.blob ?? null;
+}
+
 export async function deleteBlob(id: string): Promise<void> {
   const db = await getLocalDb();
   await db.delete("blobs", id);

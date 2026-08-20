@@ -7,6 +7,7 @@ import { localFetch } from "@/lib/local/api";
 import { putBlob, localBlobRef } from "@/lib/local/blobs";
 import { extractImageColors } from "@/lib/color-extraction-client";
 import { readImageDimensions } from "@/lib/use-capture-ingest";
+import { enrichSavedImage } from "@/lib/auto-enrich-image";
 
 /** What content-script.js relays in from the extension's background
  * worker — see browser-extension/background.js for the other half. */
@@ -80,6 +81,10 @@ export function ExtensionSyncProvider() {
             }),
           });
           if (!res.ok) throw new Error("Failed to save image");
+          const { item } = await res.json();
+          void enrichSavedImage(item.id, blob).then(() =>
+            mutate((key) => typeof key === "string" && key.startsWith("/api/items")),
+          );
         }
         toast.success("Saved from the extension", { duration: 2500 });
         void mutate((key) => typeof key === "string" && key.startsWith("/api/items"));

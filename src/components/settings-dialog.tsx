@@ -19,6 +19,9 @@ import {
   Download,
   Check,
   Compass,
+  Sparkles,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -26,11 +29,13 @@ import { useLocalStorage } from "@/lib/use-local-storage";
 import { isElectron } from "@/lib/is-electron";
 import { cn } from "@/lib/utils";
 import { START_TOUR_EVENT } from "@/components/product-tour";
+import { AI_PROVIDERS, getAiSettings, setAiSettings, type AiSettings } from "@/lib/ai/settings";
 import type { ApiItem } from "@/types/item";
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "capture", label: "Capture", icon: Clipboard },
+  { id: "ai", label: "AI", icon: Sparkles },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { id: "data", label: "Data", icon: Database },
   { id: "about", label: "About", icon: Info },
@@ -100,6 +105,7 @@ function SettingsDialog({
 
               {section === "appearance" && <AppearanceSection />}
               {section === "capture" && <CaptureSection />}
+              {section === "ai" && <AiSection />}
               {section === "shortcuts" && <ShortcutsSection />}
               {section === "data" && <DataSection />}
               {section === "about" && <AboutSection />}
@@ -155,6 +161,7 @@ function CaptureSection() {
     "glint:settings:clipboard-watch",
     true,
   );
+  const [ocrEnabled, setOcrEnabled] = useLocalStorage("glint:settings:ocr-enabled", true);
   const nativeAvailable = isElectron();
 
   return (
@@ -187,6 +194,132 @@ function CaptureSection() {
             className="mt-1 size-4 shrink-0 accent-primary disabled:opacity-40"
           />
         </label>
+
+        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border/60 p-3">
+          <div>
+            <p className="text-sm font-medium">Scan images for text</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Runs OCR on new images entirely on this device (no upload,
+              nothing sent anywhere) and suggests a tag or two from what it
+              finds — a receipt, some code, an error message. Also makes
+              text inside screenshots searchable.
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={ocrEnabled}
+            onChange={(e) => setOcrEnabled(e.target.checked)}
+            className="mt-1 size-4 shrink-0 accent-primary"
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function AiSection() {
+  const [settings, setSettings] = useState<AiSettings>(() => getAiSettings());
+  const [showKey, setShowKey] = useState(false);
+
+  function update(patch: Partial<AiSettings>) {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    setAiSettings(next);
+  }
+
+  const activeProvider = AI_PROVIDERS.find((p) => p.id === settings.provider);
+
+  return (
+    <div>
+      <SectionHeading>AI</SectionHeading>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Glint runs basic text-in-screenshot detection locally and for free
+        (see Capture). For real image understanding — a photo of a
+        product, a scene, anything without readable text — add your own
+        API key from a provider you already have one for. Stored only in
+        this browser, sent only to that provider, and only when you save
+        an image with this turned on.
+      </p>
+
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Provider</p>
+          <div className="flex gap-2">
+            {AI_PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => update({ provider: settings.provider === p.id ? null : p.id })}
+                className={cn(
+                  "glass-pill flex-1 px-3 py-2.5 text-xs font-medium transition-colors",
+                  settings.provider === p.id ? "ring-2 ring-primary" : "hover:brightness-105",
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {settings.provider && (
+          <>
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                {activeProvider?.label} API key
+              </p>
+              <div className="relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={settings.apiKey}
+                  onChange={(e) => update({ apiKey: e.target.value })}
+                  placeholder="sk-…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-border/60 bg-transparent px-3 py-2 pr-9 text-sm outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  aria-label={showKey ? "Hide key" : "Show key"}
+                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKey ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                Model (optional)
+              </p>
+              <input
+                type="text"
+                value={settings.model}
+                onChange={(e) => update({ model: e.target.value })}
+                placeholder={activeProvider?.defaultModel}
+                className="w-full rounded-lg border border-border/60 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+
+            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border/60 p-3">
+              <div>
+                <p className="text-sm font-medium">Automatically categorize new images</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Sends each newly saved image to {activeProvider?.label} for a
+                  suggested tag and title. Off means it never runs on its
+                  own — uses your own API credits either way.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.autoCategorize}
+                onChange={(e) => update({ autoCategorize: e.target.checked })}
+                disabled={!settings.apiKey.trim()}
+                className="mt-1 size-4 shrink-0 accent-primary disabled:opacity-40"
+              />
+            </label>
+          </>
+        )}
       </div>
     </div>
   );

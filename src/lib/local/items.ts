@@ -92,7 +92,10 @@ export async function listItems(filters: ListItemsFilters = {}): Promise<ApiItem
         r.title?.toLowerCase().includes(q) ||
         r.bodyText?.toLowerCase().includes(q) ||
         r.url?.toLowerCase().includes(q) ||
-        r.domain?.toLowerCase().includes(q),
+        r.domain?.toLowerCase().includes(q) ||
+        // OCR'd text (lib/ocr.ts) — lets "find that screenshot with X
+        // in it" actually work, the main payoff of running OCR at all.
+        r.ocrText?.toLowerCase().includes(q),
     );
   }
   if (filters.tagSlug) {

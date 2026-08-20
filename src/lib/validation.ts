@@ -50,6 +50,13 @@ export const updateItemSchema = z.object({
   bodyText: z.string().optional(),
   bodyJson: z.unknown().optional(),
   completed: z.boolean().optional(),
+  // Written by lib/auto-enrich-image.ts once local OCR (lib/ocr.ts)
+  // finds text in a saved screenshot — previously a "dormant" schema
+  // field nothing ever actually wrote to, so its absence here was never
+  // noticed: Zod silently drops unknown keys rather than erroring,
+  // which meant a PATCH carrying ocrText looked like it succeeded while
+  // quietly not persisting it at all.
+  ocrText: z.string().optional(),
   tags: z.array(z.string()).optional(),
   collections: z.array(z.string()).optional(),
 });

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { extractImageColors } from "@/lib/color-extraction-client";
 import { localFetch } from "@/lib/local/api";
 import { putBlob, localBlobRef } from "@/lib/local/blobs";
+import { enrichSavedImage } from "@/lib/auto-enrich-image";
 
 /** A pasted/copied string counts as a link only if it's a single bare
  * http(s) URL — a paragraph that merely contains a URL is treated as a
@@ -92,8 +93,13 @@ export function useCaptureIngest() {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error("Failed to save image");
+        const { item } = await res.json();
         refreshLibrary();
         toast.success("Image saved", { id: toastId });
+        // Not awaited — OCR/AI categorization happen in the background
+        // and shouldn't hold up the "saved" toast. Refreshes again once
+        // done so any suggested tags show up without a manual reload.
+        void enrichSavedImage(item.id, file).then(refreshLibrary);
       } catch (error) {
         if (controller.signal.aborted) {
           toast("Upload canceled", { id: toastId });

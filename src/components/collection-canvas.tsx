@@ -21,6 +21,7 @@ import type { ApiItem, ItemType } from "@/types/item";
 import type { ApiCanvasObject, CanvasObjectType, CanvasShapeVariant } from "@/types/canvas-object";
 import { localFetch } from "@/lib/local/api";
 import { useResolvedImageSrc, putBlob, localBlobRef } from "@/lib/local/blobs";
+import { enrichSavedImage } from "@/lib/auto-enrich-image";
 
 type Position = { x: number; y: number; w: number; h: number; zIndex: number };
 type NodeRef = { kind: "item"; id: string } | { kind: "object"; id: string };
@@ -1470,6 +1471,10 @@ export function CollectionCanvas({
 
       await mutate(`/api/collections/${collectionSlug}`);
       toast.success("Image added", { id: toastId });
+      // Not awaited — OCR/AI categorization run in the background; the
+      // canvas doesn't need to wait on them, just pick up any suggested
+      // tags whenever they're ready.
+      void enrichSavedImage(item.id, file).then(() => mutate(`/api/collections/${collectionSlug}`));
     } catch (error) {
       if (controller.signal.aborted) {
         toast("Upload canceled", { id: toastId });

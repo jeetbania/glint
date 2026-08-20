@@ -3,7 +3,9 @@ import { useSWRConfig } from "swr";
 import { useSound } from "@/lib/use-sound";
 import type { ApiItem } from "@/types/item";
 import { localFetch } from "@/lib/local/api";
-import { isLocalBlobRef, resolveBlobSrc } from "@/lib/local/blobs";
+import { isLocalBlobRef, localBlobId, resolveBlobSrc, getBlob } from "@/lib/local/blobs";
+import { categorizeImage } from "@/lib/ai/categorize";
+import { getAiSettings } from "@/lib/ai/settings";
 
 /** Delete/copy-link/download for a saved item — the same three actions
  * item-detail-dialog.tsx already offers, pulled out so item-card's new
@@ -60,5 +62,43 @@ export function useItemActions() {
     a.click();
   }
 
-  return { remove, copyLink, download, refreshLibrary };
+  async function autoTagWithAi(item: ApiItem) {
+    const settings = getAiSettings();
+    if (!settings.provider || !settings.apiKey.trim()) {
+      toast("Add an AI provider in Settings first", {
+        description: "Settings → AI — bring your own API key.",
+      });
+      return;
+    }
+    if (!item.blobUrl || !isLocalBlobRef(item.blobUrl)) {
+      toast.error("Nothing to send for this item");
+      return;
+    }
+    const toastId = toast.loading("Asking AI to take a look…");
+    try {
+      const blob = await getBlob(localBlobId(item.blobUrl));
+      if (!blob) throw new Error("Image not found");
+      const result = await categorizeImage(blob, settings);
+      if (!result || (result.tags.length === 0 && !result.title)) {
+        toast("Nothing new to suggest", { id: toastId });
+        return;
+      }
+      const mergedTags = [...new Set([...item.tags.map((t) => t.name), ...result.tags])];
+      await localFetch(`/api/items/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(result.title && !item.title ? { title: result.title } : {}),
+          ...(mergedTags.length > item.tags.length ? { tags: mergedTags } : {}),
+        }),
+      });
+      toast.success("Tagged", { id: toastId });
+      void refreshLibrary();
+    } catch (error) {
+      console.error(error);
+      toast.error("Couldn't get a suggestion", { id: toastId });
+    }
+  }
+
+  return { remove, copyLink, download, autoTagWithAi, refreshLibrary };
 }

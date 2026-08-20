@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Copy,
   Download,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { GLINT_ITEM_DRAG_TYPE } from "@/lib/drag-types";
+import { isLocalBlobRef } from "@/lib/local/blobs";
 import type { ApiItem } from "@/types/item";
 
 export function ItemCard({
@@ -39,9 +41,10 @@ export function ItemCard({
 }) {
   const hasVisual =
     item.type === "image" || (item.type === "link" && !!item.previewImageUrl);
-  const { remove, copyLink, download } = useItemActions();
+  const { remove, copyLink, download, autoTagWithAi } = useItemActions();
 
   const hasDownload = !!(item.blobUrl ?? item.previewImageUrl);
+  const canAutoTag = item.type === "image" && isLocalBlobRef(item.blobUrl);
   const actions: MenuAction[] = [
     { label: "Open", icon: Maximize2, onClick },
     ...(item.url
@@ -58,6 +61,9 @@ export function ItemCard({
       : []),
     ...(hasDownload
       ? [{ label: "Download", icon: Download, onClick: () => download(item) }]
+      : []),
+    ...(canAutoTag
+      ? [{ label: "Auto-tag with AI", icon: Sparkles, onClick: () => autoTagWithAi(item) }]
       : []),
     {
       label: "Delete",
