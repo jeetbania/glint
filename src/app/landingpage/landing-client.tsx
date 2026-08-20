@@ -6,7 +6,7 @@ import Image from "next/image";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { ArrowRight, Apple, MonitorSmartphone, Globe, Heart, Search } from "lucide-react";
+import { ArrowRight, Globe, Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMockup } from "./app-mockup";
 import { FeatureBento } from "./feature-bento";
@@ -45,6 +45,36 @@ function InstagramIcon({ className }: { className?: string }) {
       <rect x="3" y="3" width="18" height="18" rx="5" />
       <circle cx="12" cy="12" r="4" />
       <circle cx="17.2" cy="6.8" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// The user's own logo files (Downloads/apple-logo.svg,
+// Downloads/windows-icon.svg), inlined here rather than served from
+// /public so `fill="black"` can become `currentColor` — the download
+// buttons need the Mac one to read white-on-blue and the Windows one
+// to follow the outline button's normal text color, in both themes.
+function AppleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        d="M34.1 40.56C32.14 42.46 30 42.16 27.94 41.26C25.76 40.34 23.76 40.3 21.46 41.26C18.58 42.5 17.06 42.14 15.34 40.56C5.57996 30.5 7.01996 15.18 18.1 14.62C20.8 14.76 22.68 16.1 24.26 16.22C26.62 15.74 28.88 14.36 31.4 14.54C34.42 14.78 36.7 15.98 38.2 18.14C31.96 21.88 33.44 30.1 39.16 32.4C38.02 35.4 36.54 38.38 34.08 40.58L34.1 40.56ZM24.06 14.5C23.76 10.04 27.38 6.36 31.54 6C32.12 11.16 26.86 15 24.06 14.5Z"
+      />
+    </svg>
+  );
+}
+
+function WindowsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" fill="none" className={className} aria-hidden>
+      <path
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={3.833}
+        strokeLinejoin="round"
+        d="M6.75 11.063L19.688 9.338V21.413H6.75V11.063ZM24.862 8.845L41.25 6.75V21.413H24.862V8.845ZM24.862 27.45L41.25 27.833V41.25L24.862 38.567V27.45ZM6.75 26.588L19.688 26.899V37.8L6.75 35.62V26.588Z"
+      />
     </svg>
   );
 }
@@ -357,21 +387,25 @@ export function LandingPage() {
             straight from your browser.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="w-full px-5 sm:w-auto" render={<a href={MAC_DOWNLOAD_URL} />}>
-              <Apple className="size-4" />
+            <Button
+              size="lg"
+              className="w-full gap-0.5 px-5 sm:w-auto"
+              render={<a href={MAC_DOWNLOAD_URL} />}
+            >
+              <AppleIcon className="size-5" />
               Download for Mac
             </Button>
             <Button
               size="lg"
               variant="outline"
-              className="w-full px-5 sm:w-auto"
+              className="w-full gap-0.5 px-5 sm:w-auto"
               onClick={() =>
                 toast("Windows build is coming soon", {
                   description: "The Mac app is ready to go right now.",
                 })
               }
             >
-              <MonitorSmartphone className="size-4" />
+              <WindowsIcon className="size-5" />
               Download for Windows
             </Button>
           </div>
