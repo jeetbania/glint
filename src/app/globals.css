@@ -835,3 +835,15 @@ html[data-desktop-shell] [data-titlebar-strip] {
 .landing-page [role="tab"] {
   cursor: pointer;
 }
+
+/* Landing page only: none of the photos on this page (the hero
+   mockup's saved-item photos, the scattered capture-card texture, the
+   app icon) are meant to be draggable or selectable — they're
+   decorative UI chrome, not content a visitor would want to grab.
+   -webkit-user-drag stops the native "drag this image out" ghost;
+   user-select stops a click-drag from highlighting it as text. */
+.landing-page img {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}

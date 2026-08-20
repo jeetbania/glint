@@ -13,13 +13,26 @@ import {
 import { GhostBar } from "@/components/ui/ghost-card";
 import { cn } from "@/lib/utils";
 
-// A grayscale ramp plus one real blue accent — the only spot of color
-// in the whole grid, standing in for "the color Glint remembers" while
-// staying inside the no-gradient/mostly-monochrome brief. Uses the
-// app's own --primary token (bg-primary) rather than a hardcoded hex,
-// so it's the same blue as every button on the page and adapts with
-// the theme.
-const GRAY_SWATCHES = ["bg-foreground/15", "bg-foreground/30", "bg-foreground/50", "bg-foreground/70"];
+// Soft pastel swatches (not fully saturated hex) plus one real blue
+// accent for "the picked one" — the same restrained pastel family the
+// rest of the app already uses for Collections folders and card tints,
+// not a rainbow of vivid colors.
+const PASTEL_SWATCHES = ["#a7c7f5", "#b8e6d2", "#f7c9a0", "#e0bdf0", "#f6b8c6"];
+
+// The same soft pastel-glass recipe collections-row.tsx uses for
+// folder tiles (globals.css's .glass-tint-* classes), applied here as
+// plain background gradients rather than the full utility class — the
+// class also carries backdrop-filter/box-shadow tuned for a floating
+// tile, which would fight this round's "soften the shadows" request.
+// One tint per card gives the grid the same pastel personality as the
+// rest of the app instead of reading as flat gray.
+export const TINTS = {
+  sky: "linear-gradient(145deg, rgba(125, 211, 252, 0.32), rgba(96, 165, 250, 0.1))",
+  lavender: "linear-gradient(145deg, rgba(192, 132, 252, 0.32), rgba(244, 114, 182, 0.1))",
+  peach: "linear-gradient(145deg, rgba(253, 186, 116, 0.32), rgba(251, 113, 133, 0.1))",
+  mint: "linear-gradient(145deg, rgba(110, 231, 183, 0.32), rgba(45, 212, 191, 0.1))",
+  rose: "linear-gradient(145deg, rgba(244, 114, 182, 0.32), rgba(251, 113, 133, 0.1))",
+} as const;
 
 // Real saved-item photos (same ones the hero mockup uses), reused here
 // as soft scattered background texture around the capture card — the
@@ -70,12 +83,14 @@ function BentoCard({
   className,
   title,
   body,
+  tint,
   sceneClassName,
   children,
 }: {
   className?: string;
   title: string;
   body: string;
+  tint: keyof typeof TINTS;
   sceneClassName?: string;
   children?: React.ReactNode;
 }) {
@@ -96,8 +111,9 @@ function BentoCard({
       )}
     >
       <div
+        style={{ background: TINTS[tint] }}
         className={cn(
-          "relative flex h-52 items-center justify-center overflow-hidden rounded-xl bg-muted/60 p-5 sm:h-60",
+          "relative flex h-52 items-center justify-center overflow-hidden rounded-xl p-5 sm:h-60",
           sceneClassName,
         )}
       >
@@ -114,10 +130,11 @@ function BentoCard({
 /** The mid-page bento grid — each cell is a small wireframe-style
  * mockup of one real feature (the save dialog, the color swatches, a
  * note and a task, a search result list, the privacy note), kept
- * deliberately flat: no rotation, no colorful gradients, just
- * grayscale panels on a light gray backdrop with the app's own blue
- * (--primary) as the one accent, echoing a clean product-loading-state
- * illustration rather than a playful scattered collage. */
+ * deliberately flat: no rotation, white/gray wireframe panels with the
+ * app's own blue (--primary) as the main accent, each sitting on a
+ * soft pastel-glass backdrop (the same tint recipe Collections folders
+ * use) rather than flat gray — colorful enough to feel alive, still
+ * restrained rather than a playful scattered collage. */
 export function FeatureBento() {
   return (
     <section className="mx-auto w-full max-w-5xl px-4 py-8 sm:py-12">
@@ -125,6 +142,7 @@ export function FeatureBento() {
         <BentoCard
           className="lg:col-span-2"
           title="Drop anything in"
+          tint="sky"
           body="Paste an image, drop in a link, or jot a quick note. Glint saves it right away and figures out where it belongs, so nothing sits in a downloads folder."
         >
           {/* Loose background texture — real saved photos, heavily
@@ -175,13 +193,18 @@ export function FeatureBento() {
 
         <BentoCard
           title="Every color, remembered"
+          tint="lavender"
           body="Glint reads the colors out of every image you save, so the one moody blue shot is a click away."
         >
           <Panel className="w-full max-w-[220px] p-3.5">
             <span className="text-xs font-medium text-muted-foreground">Colors</span>
             <div className="mt-2.5 flex items-center gap-2.5">
-              {GRAY_SWATCHES.map((tone) => (
-                <span key={tone} className={cn("size-6 shrink-0 rounded-full", tone)} />
+              {PASTEL_SWATCHES.map((hex) => (
+                <span
+                  key={hex}
+                  className="size-6 shrink-0 rounded-full border border-black/5"
+                  style={{ backgroundColor: hex }}
+                />
               ))}
               <span className="flex size-7 shrink-0 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-card ring-primary">
                 <span className="size-full rounded-full bg-primary" />
@@ -193,6 +216,7 @@ export function FeatureBento() {
 
         <BentoCard
           title="Not everything is a picture"
+          tint="peach"
           body="Write a note, make a checklist, and it lives right alongside everything else you've saved."
         >
           <div className="flex w-full max-w-[240px] flex-col gap-2.5">
@@ -216,6 +240,7 @@ export function FeatureBento() {
 
         <BentoCard
           title="Everything, one search away"
+          tint="mint"
           body="Hit Cmd+K from anywhere in Glint to jump straight to any item, folder, or note."
           sceneClassName="items-start pt-8"
         >
@@ -256,6 +281,7 @@ export function FeatureBento() {
             (no color gradient) to match the rest of this grid. */}
         <BentoCard
           title="Private by default"
+          tint="rose"
           body="No feed, no algorithm, no one else looking over your shoulder — just a quiet place to keep what matters to you."
         >
           <div className="relative flex size-28 items-center justify-center rounded-2xl bg-gradient-to-b from-foreground/[0.02] to-foreground/[0.06]">

@@ -6,10 +6,10 @@ import Image from "next/image";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { ArrowRight, Globe, Heart, Search } from "lucide-react";
+import { ArrowRight, Check, Globe, Heart, MousePointerClick, Puzzle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMockup } from "./app-mockup";
-import { FeatureBento, SCATTER_IMAGES } from "./feature-bento";
+import { FeatureBento, SCATTER_IMAGES, TINTS } from "./feature-bento";
 
 // Real profile links, pulled from the user's own portfolio site
 // (jeetcreates.cc) rather than guessed. lucide-react doesn't ship brand
@@ -87,34 +87,61 @@ function WindowsIcon({ className }: { className?: string }) {
 const MAC_DOWNLOAD_URL =
   "https://wx1ppcub8lalgvoj.public.blob.vercel-storage.com/downloads/Glint-0.1.0-arm64.dmg?download=1";
 
+// Same pattern as the Mac DMG: the extension isn't on the Chrome Web
+// Store (that review process is its own separate effort), so this is
+// the actual browser-extension/ folder from the repo, zipped and
+// uploaded straight to Blob — a real, working download today rather
+// than a placeholder.
+const EXTENSION_DOWNLOAD_URL =
+  "https://wx1ppcub8lalgvoj.public.blob.vercel-storage.com/downloads/Glint-browser-extension.zip?download=1";
+
+const EXTENSION_FEATURES = [
+  { icon: MousePointerClick, text: "Click the toolbar icon to save the tab you're on" },
+  { icon: Puzzle, text: "Right-click any page, image, or link and save it directly" },
+  { icon: Check, text: "A quiet notification confirms the save, no tab-switching" },
+];
+
+const PANEL_SHADOW = "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]";
+
 const STEPS = [
   {
     title: "Save something",
     body: "Paste an image, drop in a link, or jot down a note. Takes a second.",
+    tint: "sky" as const,
     scene: (
-      <div className="flex w-36 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
-        <div className="relative size-7 shrink-0 overflow-hidden rounded-lg">
-          <Image src={SCATTER_IMAGES[0]} alt="" fill className="object-cover" sizes="28px" />
+      <div className={`relative flex w-40 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 ${PANEL_SHADOW}`}>
+        <div className="relative size-8 shrink-0 overflow-hidden rounded-lg">
+          <Image src={SCATTER_IMAGES[0]} alt="" fill className="object-cover" sizes="32px" />
         </div>
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="h-1.5 w-full rounded-full bg-foreground/12" />
-          <div className="h-1.5 w-2/3 rounded-full bg-foreground/12" />
+          <p className="truncate text-xs font-medium">moodboard.png</p>
+          <div className="relative h-1 w-full overflow-hidden rounded-full bg-foreground/10">
+            <div className="h-full w-2/3 rounded-full bg-primary" />
+          </div>
         </div>
+        <span className="absolute -right-1.5 -top-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="size-2.5" />
+        </span>
       </div>
     ),
   },
   {
     title: "It finds its place",
     body: "Glint reads colors, pulls previews, and quietly sorts things into folders you set up once.",
+    tint: "lavender" as const,
     scene: (
       <div className="flex items-center gap-2.5">
-        <div className="relative size-9 shrink-0 overflow-hidden rounded-lg border border-border/60">
-          <Image src={SCATTER_IMAGES[1]} alt="" fill className="object-cover" sizes="36px" />
+        <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-border/60">
+          <Image src={SCATTER_IMAGES[1]} alt="" fill className="object-cover" sizes="40px" />
+          <span className="absolute left-1 top-1 size-2 rounded-full border border-white/80 bg-primary" />
         </div>
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-        <div className="flex size-10 shrink-0 flex-col justify-center gap-1 rounded-lg border border-border/60 bg-card p-2">
-          <div className="h-1 w-full rounded-full bg-foreground/15" />
-          <div className="h-1 w-2/3 rounded-full bg-foreground/15" />
+        <div className={`w-12 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-card ${PANEL_SHADOW}`}>
+          <div className="h-1.5 w-full bg-primary/70" />
+          <div className="space-y-1 p-1.5">
+            <div className="h-1 w-full rounded-full bg-foreground/15" />
+            <div className="h-1 w-2/3 rounded-full bg-foreground/15" />
+          </div>
         </div>
       </div>
     ),
@@ -122,15 +149,22 @@ const STEPS = [
   {
     title: "Find it again in seconds",
     body: "Search, filter by color, or just scroll. It's all still exactly where you left it.",
+    tint: "mint" as const,
     scene: (
-      <div className="w-36 space-y-1.5">
-        <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
+      <div className="w-40 space-y-1.5">
+        <div className={`flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1.5 ${PANEL_SHADOW}`}>
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">moodboard</span>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
-          <span className="size-4 shrink-0 rounded-md bg-primary" />
-          <span className="truncate text-[11px] font-medium">moodboard.png</span>
+        <div className={`space-y-1 rounded-lg border border-border/60 bg-card p-1.5 ${PANEL_SHADOW}`}>
+          <div className="flex items-center gap-1.5 rounded-md px-1 py-0.5">
+            <span className="size-4 shrink-0 rounded-md bg-primary" />
+            <span className="min-w-0 flex-1 truncate text-[11px] font-medium">moodboard.png</span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-md px-1 py-0.5">
+            <span className="size-4 shrink-0 rounded-md bg-foreground/15" />
+            <span className="min-w-0 flex-1 truncate text-[11px] font-medium">Moodboard notes</span>
+          </div>
         </div>
       </div>
     ),
@@ -335,7 +369,10 @@ export function LandingPage() {
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
               className="flex flex-col gap-4 p-4 sm:p-5"
             >
-              <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-xl bg-foreground/[0.025]">
+              <div
+                style={{ background: TINTS[step.tint] }}
+                className="relative flex h-40 items-center justify-center overflow-hidden rounded-xl"
+              >
                 {step.scene}
               </div>
               <div>
@@ -370,6 +407,67 @@ export function LandingPage() {
             </details>
           ))}
         </FadeIn>
+      </section>
+
+      {/* Browser extension */}
+      <section className="mx-auto w-full max-w-5xl px-4 py-10 sm:py-16">
+        <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
+          <FadeIn>
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Browser extension
+            </span>
+            <h2 className="mt-2 font-heading text-2xl font-semibold tracking-heading sm:text-3xl">
+              Save from anywhere you browse
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Install the Glint extension for Chrome and save straight from
+              whatever page is open, no copying links back and forth.
+            </p>
+            <ul className="mt-5 space-y-3">
+              {EXTENSION_FEATURES.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-start gap-2.5 text-sm">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15">
+                    <Icon className="size-3 text-primary" />
+                  </span>
+                  {text}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Button render={<a href={EXTENSION_DOWNLOAD_URL} />}>
+                <Puzzle className="size-4" />
+                Download extension
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                For Chrome. Unzip it, then load it unpacked, about 30 seconds.
+              </span>
+            </div>
+          </FadeIn>
+
+          <FadeIn delay={0.1}>
+            {/* The extension's own context menu, mid-save — wrapped in
+                the same little-browser-window chrome as the hero mockup
+                (traffic lights, rounded card) so a plain screenshot
+                reads as "this is what it looks like in your browser"
+                instead of a loose, borderless image. */}
+            <div className="glass-panel overflow-hidden rounded-2xl p-2">
+              <div className="flex items-center gap-1.5 px-2 pb-2 pt-1">
+                <span className="size-2.5 rounded-full bg-[#ff5f57]/70" />
+                <span className="size-2.5 rounded-full bg-[#febc2e]/70" />
+                <span className="size-2.5 rounded-full bg-[#28c840]/70" />
+              </div>
+              <div className="relative aspect-[698/514] w-full overflow-hidden rounded-xl border border-border/60">
+                <Image
+                  src="/landingpage/extension-context-menu.png"
+                  alt="The Glint browser extension's right-click menu, with “Save link to Glint” highlighted"
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 1024px) 90vw, 500px"
+                />
+              </div>
+            </div>
+          </FadeIn>
+        </div>
       </section>
 
       {/* Final CTA / download */}
@@ -412,7 +510,7 @@ export function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="mx-auto w-full max-w-5xl px-4 pb-4 pt-16 sm:pb-6">
+      <footer className="mx-auto w-full max-w-5xl px-4 pb-4 pt-16 [container-type:inline-size] sm:pb-6">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-border/60 pt-6 text-sm text-muted-foreground sm:flex-row">
           <span className="flex items-center gap-1.5">
             Made with
@@ -441,25 +539,34 @@ export function LandingPage() {
           </div>
         </div>
 
-        {/* Full, solid brand mark — sized in vw so it scales with the
-            viewport, then capped so it never outgrows the max-w-5xl
-            container it sits in once the viewport is wider than that. */}
-        {/* Faded to gray (opacity + grayscale) rather than full brand
-            color — a quiet closing mark, not a second logo competing
-            for attention. The logo's height is set in `em` off the
-            same fontSize as the wordmark (not an independent vw
-            value), so it tracks the text's actual glyph height at
-            every viewport instead of drifting out of sync with it. */}
+        {/* Full, solid brand mark — sized in container-query width
+            (cqw), not viewport width (vw). vw sizing can't know about
+            the max-w-5xl cap this footer itself has, so past ~1440px
+            viewport the text kept growing (or sat capped at a guessed
+            rem value) independently of how wide the actual container
+            was, and the two drifted apart. cqw is relative to this
+            <footer>'s own content width (marked
+            [container-type:inline-size] above), which already IS
+            capped at max-w-5xl — so the text is mathematically tied to
+            the real container edge at every viewport, matching the
+            "Made with / Open the app" row above it exactly, instead of
+            a hand-tuned guess. Faded to gray (opacity + grayscale)
+            rather than full brand color — a quiet closing mark, not a
+            second logo competing for attention. The logo's height is
+            set in `em` off the same fontSize as the wordmark, so it
+            tracks the text's actual glyph height instead of scaling
+            independently. */}
         <div
           aria-hidden
-          className="mt-2 flex select-none items-center justify-center gap-[2vw] text-foreground opacity-35 grayscale"
-          style={{ fontSize: "clamp(5rem, 20vw, 18rem)" }}
+          className="mt-2 flex select-none items-center justify-center gap-[1.5cqw] text-foreground opacity-15 grayscale"
+          style={{ fontSize: "clamp(4rem, 32cqw, 24rem)" }}
         >
           <Image
             src="/logo.png"
             alt=""
             width={512}
             height={512}
+            draggable={false}
             className="shrink-0 rounded-[22%]"
             style={{ width: "0.72em", height: "0.72em" }}
           />
