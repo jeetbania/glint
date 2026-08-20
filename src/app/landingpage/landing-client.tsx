@@ -8,9 +8,8 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { ArrowRight, Globe, Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { AppMockup } from "./app-mockup";
-import { FeatureBento } from "./feature-bento";
+import { FeatureBento, SCATTER_IMAGES } from "./feature-bento";
 
 // Real profile links, pulled from the user's own portfolio site
 // (jeetcreates.cc) rather than guessed. lucide-react doesn't ship brand
@@ -93,8 +92,10 @@ const STEPS = [
     title: "Save something",
     body: "Paste an image, drop in a link, or jot down a note. Takes a second.",
     scene: (
-      <div className="flex w-36 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.3)]">
-        <span className="size-7 shrink-0 rounded-lg bg-primary" />
+      <div className="flex w-36 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
+        <div className="relative size-7 shrink-0 overflow-hidden rounded-lg">
+          <Image src={SCATTER_IMAGES[0]} alt="" fill className="object-cover" sizes="28px" />
+        </div>
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="h-1.5 w-full rounded-full bg-foreground/12" />
           <div className="h-1.5 w-2/3 rounded-full bg-foreground/12" />
@@ -107,19 +108,14 @@ const STEPS = [
     body: "Glint reads colors, pulls previews, and quietly sorts things into folders you set up once.",
     scene: (
       <div className="flex items-center gap-2.5">
-        <div className="flex -space-x-2">
-          {["bg-foreground/20", "bg-foreground/40", "bg-primary"].map((tone, i) => (
-            <span
-              key={i}
-              className={cn(
-                "size-6 rounded-full border-2 border-card shadow-[0_2px_6px_rgba(0,0,0,0.2)]",
-                tone,
-              )}
-            />
-          ))}
+        <div className="relative size-9 shrink-0 overflow-hidden rounded-lg border border-border/60">
+          <Image src={SCATTER_IMAGES[1]} alt="" fill className="object-cover" sizes="36px" />
         </div>
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="size-10 shrink-0 rounded-xl bg-primary/15 shadow-[0_8px_18px_-8px_rgba(0,0,0,0.3)]" />
+        <div className="flex size-10 shrink-0 flex-col justify-center gap-1 rounded-lg border border-border/60 bg-card p-2">
+          <div className="h-1 w-full rounded-full bg-foreground/15" />
+          <div className="h-1 w-2/3 rounded-full bg-foreground/15" />
+        </div>
       </div>
     ),
   },
@@ -128,11 +124,11 @@ const STEPS = [
     body: "Search, filter by color, or just scroll. It's all still exactly where you left it.",
     scene: (
       <div className="w-36 space-y-1.5">
-        <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1.5 shadow-[0_6px_14px_-8px_rgba(0,0,0,0.25)]">
+        <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
           <Search className="size-3 shrink-0 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">moodboard</span>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-[0_6px_14px_-8px_rgba(0,0,0,0.25)]">
+        <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_4px_10px_-6px_rgba(0,0,0,0.08)]">
           <span className="size-4 shrink-0 rounded-md bg-primary" />
           <span className="truncate text-[11px] font-medium">moodboard.png</span>
         </div>
@@ -223,7 +219,7 @@ export function LandingPage() {
   }, []);
 
   return (
-    <div className="relative overflow-x-clip">
+    <div className="landing-page relative overflow-x-clip">
       {/* Subtle top-of-page gradient glow — the one spot on the whole
           page that gets to be colorful, echoing the reference site's
           rainbow smear above its headline. Everything below stays flat
@@ -448,21 +444,26 @@ export function LandingPage() {
         {/* Full, solid brand mark — sized in vw so it scales with the
             viewport, then capped so it never outgrows the max-w-5xl
             container it sits in once the viewport is wider than that. */}
+        {/* Faded to gray (opacity + grayscale) rather than full brand
+            color — a quiet closing mark, not a second logo competing
+            for attention. The logo's height is set in `em` off the
+            same fontSize as the wordmark (not an independent vw
+            value), so it tracks the text's actual glyph height at
+            every viewport instead of drifting out of sync with it. */}
         <div
           aria-hidden
-          className="mt-2 flex select-none items-center justify-center gap-[2vw] text-foreground"
+          className="mt-2 flex select-none items-center justify-center gap-[2vw] text-foreground opacity-35 grayscale"
+          style={{ fontSize: "clamp(5rem, 20vw, 18rem)" }}
         >
           <Image
             src="/logo.png"
             alt=""
             width={512}
             height={512}
-            className="w-[17vw] max-w-[11rem] shrink-0 rounded-[22%] sm:w-[11vw]"
+            className="shrink-0 rounded-[22%]"
+            style={{ width: "0.72em", height: "0.72em" }}
           />
-          <span
-            className="text-center font-heading leading-none font-semibold tracking-heading"
-            style={{ fontSize: "clamp(5rem, 20vw, 18rem)" }}
-          >
+          <span className="text-center font-heading leading-none font-semibold tracking-heading">
             Glint
           </span>
         </div>

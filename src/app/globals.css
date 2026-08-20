@@ -816,3 +816,22 @@ html[data-desktop-shell] [data-titlebar-strip] {
     opacity: 0;
   }
 }
+
+/* Landing page only: real <button> elements don't get a pointer
+   cursor by default in any browser (only <a href> does), and Tailwind
+   deliberately never adds one either — on an app's own UI that's fine
+   once you know the app, but on a first-impression marketing page a
+   genuinely clickable thing that cursors as non-interactive reads as
+   broken. Deliberately unlayered (not inside @layer utilities) so it
+   beats any Tailwind cursor-* utility regardless of source order —
+   per the CSS cascade, unlayered author styles always win over
+   layered ones. Skips [tabindex="-1"] on purpose: the hero mockup's
+   decorative toolbar buttons (Filters, Sort, ...) use that to opt out
+   of tab order precisely because they don't do anything, and should
+   keep reading as inert rather than falsely inviting a click. */
+.landing-page button:not([tabindex="-1"]),
+.landing-page a,
+.landing-page summary,
+.landing-page [role="tab"] {
+  cursor: pointer;
+}
