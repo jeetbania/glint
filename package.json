@@ -80,7 +80,8 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "artifactName": "Glint-mac.${ext}"
     },
     "win": {
       "icon": "electron/icons/icon.ico",
@@ -92,7 +93,8 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "artifactName": "Glint-Setup.${ext}"
     },
     "linux": {
       "icon": "electron/icons/icon.png",

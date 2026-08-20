@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { toast } from "sonner";
 import { ArrowRight, Check, Globe, Heart, MousePointerClick, Puzzle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMockup } from "./app-mockup";
@@ -78,13 +77,17 @@ function WindowsIcon({ className }: { className?: string }) {
   );
 }
 
-// Uploaded straight to Vercel Blob (release/Glint-0.1.0-arm64.dmg), not a
-// GitHub release, at the user's call: source stays private for now, this
-// is just a real, working download today. ?download=1 makes Blob send
-// Content-Disposition: attachment, so the browser saves it instead of
-// trying to open it inline.
+// GitHub Releases, not Vercel Blob: the repo went public specifically so
+// installers could live here instead of eating Blob storage. The asset
+// filenames are fixed (no version number baked in — see package.json's
+// `build.mac.artifactName`/`build.win.artifactName`), so
+// /releases/latest/download/<file> always resolves to whatever the newest
+// published release contains — this URL never needs to change again as
+// the app gets updated.
 const MAC_DOWNLOAD_URL =
-  "https://wx1ppcub8lalgvoj.public.blob.vercel-storage.com/downloads/Glint-0.1.0-arm64.dmg?download=1";
+  "https://github.com/jeetbania/glint/releases/latest/download/Glint-mac.dmg";
+const WINDOWS_DOWNLOAD_URL =
+  "https://github.com/jeetbania/glint/releases/latest/download/Glint-Setup.exe";
 
 // Same pattern as the Mac DMG: the extension isn't on the Chrome Web
 // Store (that review process is its own separate effort), so this is
@@ -497,18 +500,14 @@ export function LandingPage() {
               size="lg"
               variant="outline"
               className="w-full gap-0.5 px-5 sm:w-auto"
-              onClick={() =>
-                toast("Windows build is coming soon", {
-                  description: "The Mac app is ready to go right now.",
-                })
-              }
+              render={<a href={WINDOWS_DOWNLOAD_URL} />}
             >
               <WindowsIcon className="size-5" />
               Download for Windows
             </Button>
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            macOS 12 or later, Apple Silicon. Windows support is on the way.
+            macOS 12+ (Apple Silicon) and Windows 10/11 (x64 or ARM).
           </p>
         </FadeIn>
       </section>
