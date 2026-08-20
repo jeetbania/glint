@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { ArrowRight, Globe, Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AppMockup } from "./app-mockup";
 import { FeatureBento } from "./feature-bento";
 
@@ -93,7 +94,7 @@ const STEPS = [
     body: "Paste an image, drop in a link, or jot down a note. Takes a second.",
     scene: (
       <div className="flex w-36 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.3)]">
-        <span className="size-7 shrink-0 rounded-lg gradient-sky" />
+        <span className="size-7 shrink-0 rounded-lg bg-primary" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="h-1.5 w-full rounded-full bg-foreground/12" />
           <div className="h-1.5 w-2/3 rounded-full bg-foreground/12" />
@@ -107,19 +108,18 @@ const STEPS = [
     scene: (
       <div className="flex items-center gap-2.5">
         <div className="flex -space-x-2">
-          {["#3b5bdb", "#f97316", "#4ade80"].map((hex) => (
+          {["bg-foreground/20", "bg-foreground/40", "bg-primary"].map((tone, i) => (
             <span
-              key={hex}
-              className="size-6 rounded-full border-2 border-card shadow-[0_2px_6px_rgba(0,0,0,0.2)]"
-              style={{ background: hex }}
+              key={i}
+              className={cn(
+                "size-6 rounded-full border-2 border-card shadow-[0_2px_6px_rgba(0,0,0,0.2)]",
+                tone,
+              )}
             />
           ))}
         </div>
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
-        <span
-          className="size-10 shrink-0 rounded-xl shadow-[0_8px_18px_-8px_rgba(0,0,0,0.3)]"
-          style={{ background: "color-mix(in oklch, oklch(85% 0.11 220deg) 65%, transparent)" }}
-        />
+        <span className="size-10 shrink-0 rounded-xl bg-primary/15 shadow-[0_8px_18px_-8px_rgba(0,0,0,0.3)]" />
       </div>
     ),
   },
@@ -133,7 +133,7 @@ const STEPS = [
           <span className="text-xs text-muted-foreground">moodboard</span>
         </div>
         <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-[0_6px_14px_-8px_rgba(0,0,0,0.25)]">
-          <span className="size-4 shrink-0 rounded-md gradient-sky" />
+          <span className="size-4 shrink-0 rounded-md bg-primary" />
           <span className="truncate text-[11px] font-medium">moodboard.png</span>
         </div>
       </div>
