@@ -6,7 +6,7 @@ import Image from "next/image";
 import { motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { ArrowRight, Apple, MonitorSmartphone, Globe, Heart } from "lucide-react";
+import { ArrowRight, Apple, MonitorSmartphone, Globe, Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMockup } from "./app-mockup";
 import { FeatureBento } from "./feature-bento";
@@ -61,14 +61,53 @@ const STEPS = [
   {
     title: "Save something",
     body: "Paste an image, drop in a link, or jot down a note. Takes a second.",
+    scene: (
+      <div className="flex w-36 items-center gap-2.5 rounded-xl border border-border/60 bg-card p-2.5 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.3)]">
+        <span className="size-7 shrink-0 rounded-lg gradient-sky" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="h-1.5 w-full rounded-full bg-foreground/12" />
+          <div className="h-1.5 w-2/3 rounded-full bg-foreground/12" />
+        </div>
+      </div>
+    ),
   },
   {
     title: "It finds its place",
     body: "Glint reads colors, pulls previews, and quietly sorts things into folders you set up once.",
+    scene: (
+      <div className="flex items-center gap-2.5">
+        <div className="flex -space-x-2">
+          {["#3b5bdb", "#f97316", "#4ade80"].map((hex) => (
+            <span
+              key={hex}
+              className="size-6 rounded-full border-2 border-card shadow-[0_2px_6px_rgba(0,0,0,0.2)]"
+              style={{ background: hex }}
+            />
+          ))}
+        </div>
+        <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
+        <span
+          className="size-10 shrink-0 rounded-xl shadow-[0_8px_18px_-8px_rgba(0,0,0,0.3)]"
+          style={{ background: "color-mix(in oklch, oklch(85% 0.11 220deg) 65%, transparent)" }}
+        />
+      </div>
+    ),
   },
   {
     title: "Find it again in seconds",
     body: "Search, filter by color, or just scroll. It's all still exactly where you left it.",
+    scene: (
+      <div className="w-36 space-y-1.5">
+        <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1.5 shadow-[0_6px_14px_-8px_rgba(0,0,0,0.25)]">
+          <Search className="size-3 shrink-0 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">moodboard</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2 py-1.5 shadow-[0_6px_14px_-8px_rgba(0,0,0,0.25)]">
+          <span className="size-4 shrink-0 rounded-md gradient-sky" />
+          <span className="truncate text-[11px] font-medium">moodboard.png</span>
+        </div>
+      </div>
+    ),
   },
 ];
 
@@ -244,20 +283,45 @@ export function LandingPage() {
           <h2 className="font-heading text-2xl font-semibold tracking-heading sm:text-3xl">
             How Glint works
           </h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+            From a quick paste to finding it again, it only takes three steps.
+          </p>
         </FadeIn>
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-6">
+
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-80px" }}
+          variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+          className="relative overflow-hidden rounded-2xl border border-border/60 sm:grid sm:grid-cols-3 sm:divide-x sm:divide-border/60"
+        >
+          <span aria-hidden className="absolute left-4 top-3 text-sm text-muted-foreground/40 select-none">
+            +
+          </span>
+          <span aria-hidden className="absolute right-4 top-3 text-sm text-muted-foreground/40 select-none">
+            +
+          </span>
+
           {STEPS.map((step, i) => (
-            <FadeIn key={step.title} delay={i * 0.08} className="text-center sm:text-left">
-              <span className="mb-3 inline-flex size-7 items-center justify-center rounded-full border border-border/70 text-sm font-medium text-muted-foreground">
-                {i + 1}
-              </span>
-              <h3 className="font-heading text-base font-semibold tracking-heading">
-                {step.title}
-              </h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
-            </FadeIn>
+            <motion.div
+              key={step.title}
+              variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+              className="flex flex-col gap-4 p-4 sm:p-5"
+            >
+              <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-xl bg-foreground/[0.025]">
+                {step.scene}
+              </div>
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Step {i + 1}</span>
+                <h3 className="font-heading text-base font-semibold tracking-heading">
+                  {step.title}
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+              </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </section>
 
       {/* FAQ */}
