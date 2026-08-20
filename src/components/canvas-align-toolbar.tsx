@@ -11,6 +11,7 @@ import {
   AlignVerticalDistributeCenter,
   BringToFront,
   SendToBack,
+  CopyPlus,
   Trash2,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ export function CanvasAlignToolbar({
   onDistribute,
   onBringToFront,
   onSendToBack,
+  onDuplicate,
   onDelete,
 }: {
   style?: React.CSSProperties;
@@ -35,6 +37,11 @@ export function CanvasAlignToolbar({
   onDistribute: (axis: DistributeAxis) => void;
   onBringToFront: () => void;
   onSendToBack: () => void;
+  // Undefined (rather than a no-op) hides the button entirely — the
+  // parent only wires this up when the selection actually contains at
+  // least one canvas object (duplicating a Library item makes no sense
+  // here, it's not something this canvas owns).
+  onDuplicate?: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -82,6 +89,15 @@ export function CanvasAlignToolbar({
       <Btn label="Send to back" onClick={onSendToBack}>
         <SendToBack className="size-3.5" />
       </Btn>
+
+      {onDuplicate && (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-border" />
+          <Btn label="Duplicate" onClick={onDuplicate}>
+            <CopyPlus className="size-3.5" />
+          </Btn>
+        </>
+      )}
 
       <span className="mx-0.5 h-4 w-px bg-border" />
 

@@ -107,16 +107,25 @@ export const setItemPositionSchema = z.object({
 
 export const createCanvasObjectSchema = z.object({
   type: z.enum(canvasObjectTypeValues),
-  text: z.string().max(4000).optional(),
-  shapeVariant: z.enum(canvasShapeVariantValues).optional(),
+  // .nullable() as well as .optional() on the four genuinely-nullable
+  // fields: a brand-new object from the toolbar's "add" actions omits
+  // these entirely (undefined, dropped by JSON.stringify), but
+  // duplicating or undo-recreating an EXISTING object round-trips its
+  // full stored shape — which always has a real explicit `null`, not a
+  // missing key, for "not set" (see lib/local/canvas-objects.ts's
+  // DEFAULTS). Both need to validate here.
+  text: z.string().max(4000).nullable().optional(),
+  shapeVariant: z.enum(canvasShapeVariantValues).nullable().optional(),
   x: z.number(),
   y: z.number(),
   w: z.number().positive(),
   h: z.number().positive(),
   rotation: z.number().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
   zIndex: z.number().int(),
-  fill: z.string().max(60).optional(),
-  textColor: z.string().max(60).optional(),
+  fill: z.string().max(60).nullable().optional(),
+  textColor: z.string().max(60).nullable().optional(),
   fontFamily: z.enum(canvasFontFamilyValues).optional(),
   fontSize: z.number().int().positive().max(400).optional(),
   bold: z.boolean().optional(),

@@ -15,6 +15,8 @@ const DEFAULTS = {
   w: 220,
   h: 220,
   rotation: 0,
+  flipX: false,
+  flipY: false,
   zIndex: 0,
   fill: null,
   textColor: null,

@@ -23,6 +23,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { GLINT_ITEM_DRAG_TYPE } from "@/lib/drag-types";
 import type { ApiItem } from "@/types/item";
 
 export function ItemCard({
@@ -72,6 +73,16 @@ export function ItemCard({
         <button
           type="button"
           onClick={onClick}
+          draggable
+          onDragStart={(e) => {
+            // Lets a folder tile in CollectionsRow accept a drop and file
+            // this item into that collection — see FolderTile's onDrop.
+            // "copy" (not "move"): the item stays right where it is in
+            // the Library, it just gains an additional collection
+            // membership — nothing is being relocated or removed.
+            e.dataTransfer.setData(GLINT_ITEM_DRAG_TYPE, item.id);
+            e.dataTransfer.effectAllowed = "copy";
+          }}
           className={cn(
             // item-card is a plain marker class (not a style itself) —
             // see globals.css's [data-scrolling] .item-card rule, which

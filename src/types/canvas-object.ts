@@ -16,6 +16,8 @@ export type ApiCanvasObject = {
   w: number;
   h: number;
   rotation: number;
+  flipX: boolean;
+  flipY: boolean;
   zIndex: number;
   fill: string | null;
   textColor: string | null;

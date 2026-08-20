@@ -4,8 +4,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { animate } from "motion";
+import { toast } from "sonner";
 import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
@@ -28,6 +29,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { localFetch } from "@/lib/local/api";
+import { GLINT_ITEM_DRAG_TYPE } from "@/lib/drag-types";
 
 type CollectionPreview = {
   id: string;
@@ -89,9 +91,11 @@ function FolderTile({
   active: boolean;
 }) {
   const { rename, remove, setColor } = useCollectionActions();
+  const { mutate: globalMutate } = useSWRConfig();
   const router = useRouter();
   const [isRenaming, setIsRenaming] = useState(false);
   const [isPickingColor, setIsPickingColor] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const [draft, setDraft] = useState(collection.name);
   const imgRefs = useRef<(HTMLDivElement | null)[]>([]);
   // Anchors the color-picker Popover to the tile itself. Needed because
@@ -139,6 +143,39 @@ function FolderTile({
       const pos = REST[i] ?? REST[REST.length - 1];
       animate(el, { x: pos.x, y: pos.y, rotate: pos.rotate }, CLOSE_SPRING);
     });
+  }
+
+  // Drag an item card here (from the Library grid) to file it into this
+  // collection, without opening the item and using its tag editor.
+  // Additive — reads the item's current collections first and appends
+  // this one, rather than overwriting whatever it's already filed into.
+  async function handleItemDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDropTarget(false);
+    const itemId = e.dataTransfer.getData(GLINT_ITEM_DRAG_TYPE);
+    if (!itemId) return;
+    try {
+      const res = await localFetch(`/api/items/${itemId}`);
+      if (!res.ok) throw new Error("Item not found");
+      const { item } = (await res.json()) as { item: { collections: { name: string }[] } };
+      const existingNames = item.collections.map((c) => c.name);
+      if (existingNames.includes(collection.name)) {
+        toast(`Already in ${collection.name}`);
+        return;
+      }
+      const patchRes = await localFetch(`/api/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collections: [...existingNames, collection.name] }),
+      });
+      if (!patchRes.ok) throw new Error("Failed to save");
+      toast.success(`Added to ${collection.name}`);
+      void globalMutate((key) => typeof key === "string" && key.startsWith("/api/items"));
+      void globalMutate("/api/collections");
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't add that to the collection");
+    }
   }
 
   async function submitRename() {
@@ -192,10 +229,28 @@ function FolderTile({
           ref={tileRef}
           onPointerEnter={open}
           onPointerLeave={close}
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(GLINT_ITEM_DRAG_TYPE)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!isDropTarget) setIsDropTarget(true);
+          }}
+          onDragLeave={(e) => {
+            // dragleave bubbles from every child too (the Link, the SVG,
+            // the info panel...), so a naive "leave -> unset" flickers
+            // the ring off and on as the pointer crosses those internal
+            // boundaries while still hovering the same tile. Only really
+            // left once the related target (where the pointer is
+            // headed) is outside this tile entirely.
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            setIsDropTarget(false);
+          }}
+          onDrop={(e) => void handleItemDrop(e)}
           style={{ "--folder-hue": collection.colorHue, aspectRatio: CARD_ASPECT } as React.CSSProperties}
           className={cn(
             "group relative w-64 shrink-0 rounded-[18px] shadow-[0_10px_14px_-8px_rgba(0,0,0,0.18),0_3px_5px_-2px_rgba(0,0,0,0.1)] transition-transform duration-150 [perspective:800px] hover:scale-[1.02]",
             active && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+            isDropTarget && "scale-[1.04] ring-2 ring-primary ring-offset-2 ring-offset-background",
           )}
         >
           {/* Clipped layer — everything that must not bleed past the

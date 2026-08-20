@@ -15,6 +15,9 @@ import {
   Slash,
   ArrowUpRight,
   CornerDownRight,
+  FlipHorizontal,
+  FlipVertical,
+  CopyPlus,
   Trash2,
 } from "lucide-react";
 import {
@@ -87,6 +90,8 @@ export type CanvasObjectPatch = Partial<
     | "shapeVariant"
     | "text"
     | "rotation"
+    | "flipX"
+    | "flipY"
   >
 >;
 
@@ -98,11 +103,13 @@ export type CanvasObjectPatch = Partial<
 export function CanvasObjectToolbar({
   obj,
   onChange,
+  onDuplicate,
   onDelete,
   style,
 }: {
   obj: ApiCanvasObject;
   onChange: (patch: CanvasObjectPatch) => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   style?: React.CSSProperties;
 }) {
@@ -247,6 +254,33 @@ export function CanvasObjectToolbar({
       )}
 
       <span className="mx-0.5 h-4 w-px bg-border" />
+
+      <ToolbarToggle
+        label="Flip horizontal"
+        active={!!obj.flipX}
+        onClick={() => onChange({ flipX: !obj.flipX })}
+      >
+        <FlipHorizontal className="size-3.5" />
+      </ToolbarToggle>
+      <ToolbarToggle
+        label="Flip vertical"
+        active={!!obj.flipY}
+        onClick={() => onChange({ flipY: !obj.flipY })}
+      >
+        <FlipVertical className="size-3.5" />
+      </ToolbarToggle>
+
+      <span className="mx-0.5 h-4 w-px bg-border" />
+
+      <button
+        type="button"
+        aria-label="Duplicate"
+        title="Duplicate (⌘D)"
+        onClick={onDuplicate}
+        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground"
+      >
+        <CopyPlus className="size-3.5" />
+      </button>
 
       <button
         type="button"

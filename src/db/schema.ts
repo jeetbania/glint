@@ -262,6 +262,8 @@ export const canvasObjects = pgTable(
     w: real("w").notNull().default(220),
     h: real("h").notNull().default(220),
     rotation: real("rotation").notNull().default(0),
+    flipX: boolean("flip_x").notNull().default(false),
+    flipY: boolean("flip_y").notNull().default(false),
     zIndex: integer("z_index").notNull().default(0),
 
     // sticky/shape/frame background fill; null on plain text (no box).

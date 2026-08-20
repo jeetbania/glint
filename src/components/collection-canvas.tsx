@@ -41,6 +41,7 @@ type UndoEntry =
   | { type: "position"; ref: NodeRef; before: Position; after: Position }
   | { type: "group-position"; refs: NodeRef[]; before: Position[]; after: Position[] }
   | { type: "object-create"; obj: ApiCanvasObject }
+  | { type: "group-create"; objs: ApiCanvasObject[] }
   | { type: "object-delete"; obj: ApiCanvasObject }
   | { type: "group-delete"; objs: ApiCanvasObject[] }
   | { type: "object-update"; id: string; before: CanvasObjectPatch; after: CanvasObjectPatch };
@@ -91,6 +92,14 @@ function readImageDimensions(blob: Blob): Promise<{ width: number; height: numbe
     };
     img.src = objectUrl;
   });
+}
+
+function canvasObjectTransform(obj: ApiCanvasObject): string | undefined {
+  const parts: string[] = [];
+  if (obj.rotation) parts.push(`rotate(${obj.rotation}deg)`);
+  if (obj.flipX) parts.push("scaleX(-1)");
+  if (obj.flipY) parts.push("scaleY(-1)");
+  return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 function rectsIntersect(
@@ -424,6 +433,18 @@ export function CollectionCanvas({
       void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
         method: "DELETE",
       });
+    } else if (entry.type === "group-create") {
+      const ids = entry.objs.map((o) => o.id);
+      setCanvasObjectsState((prev) => prev.filter((o) => !ids.includes(o.id)));
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const id of ids) delete next[id];
+        return next;
+      });
+      setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
+      for (const id of ids) {
+        void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+      }
     } else if (entry.type === "object-delete") {
       const created = await recreateObjectOnServer(entry.obj);
       entry.obj = created; // keep the entry pointing at the live id for a future redo/undo
@@ -497,6 +518,15 @@ export function CollectionCanvas({
       for (const id of ids) {
         void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
       }
+    } else if (entry.type === "group-create") {
+      const created = await Promise.all(entry.objs.map((o) => recreateObjectOnServer(o)));
+      entry.objs = created;
+      setCanvasObjectsState((prev) => [...prev, ...created]);
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const c of created) next[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h, zIndex: c.zIndex };
+        return next;
+      });
     }
   }
 
@@ -596,6 +626,30 @@ export function CollectionCanvas({
         e.preventDefault();
         void handleDeleteSelection();
         return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d" && selectedIds.length > 0) {
+        // Overrides the browser's own "bookmark this page" shortcut —
+        // acceptable on a canvas that's meant to be worked in with the
+        // keyboard, same trade-off Figma/FigJam make.
+        e.preventDefault();
+        void handleDuplicateSelection();
+        return;
+      }
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && selectedObj) {
+        // Figma's own flip shortcuts — single-selection only, matching
+        // the rich toolbar's flip buttons (a multi-selection flip would
+        // need to flip the whole group's layout, not just each object
+        // in place, which is a bigger feature left for later).
+        if (e.key.toLowerCase() === "h") {
+          e.preventDefault();
+          handleObjectStyleChange(selectedObj.id, { flipX: !selectedObj.flipX });
+          return;
+        }
+        if (e.key.toLowerCase() === "v") {
+          e.preventDefault();
+          handleObjectStyleChange(selectedObj.id, { flipY: !selectedObj.flipY });
+          return;
+        }
       }
       if (!e.metaKey && !e.ctrlKey && !e.altKey) {
         const variant = SHAPE_SHORTCUT_KEYS[e.key.toLowerCase()];
@@ -1282,6 +1336,64 @@ export function CollectionCanvas({
     });
   }
 
+  // Offset a touch down-right of the original, Figma-style, so a
+  // duplicate never lands exactly on top of its source and reads as
+  // "nothing happened."
+  const DUPLICATE_OFFSET = 20;
+
+  async function handleDuplicateObject(id: string) {
+    const obj = canvasObjectsState.find((o) => o.id === id);
+    if (!obj) return;
+    try {
+      const created = await recreateObjectOnServer({
+        ...obj,
+        x: obj.x + DUPLICATE_OFFSET,
+        y: obj.y + DUPLICATE_OFFSET,
+        zIndex: ++maxZ.current,
+      });
+      setCanvasObjectsState((prev) => [...prev, created]);
+      setPositions((prev) => ({
+        ...prev,
+        [created.id]: { x: created.x, y: created.y, w: created.w, h: created.h, zIndex: created.zIndex },
+      }));
+      setSelectedIds([created.id]);
+      pushUndo({ type: "object-create", obj: created });
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't duplicate that");
+    }
+  }
+
+  async function handleDuplicateSelection() {
+    const objs = selectedIds
+      .map((id) => canvasObjectsState.find((o) => o.id === id))
+      .filter((o): o is ApiCanvasObject => !!o);
+    if (objs.length === 0) return;
+    try {
+      const created = await Promise.all(
+        objs.map((obj) =>
+          recreateObjectOnServer({
+            ...obj,
+            x: obj.x + DUPLICATE_OFFSET,
+            y: obj.y + DUPLICATE_OFFSET,
+            zIndex: ++maxZ.current,
+          }),
+        ),
+      );
+      setCanvasObjectsState((prev) => [...prev, ...created]);
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const c of created) next[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h, zIndex: c.zIndex };
+        return next;
+      });
+      setSelectedIds(created.map((c) => c.id));
+      pushUndo({ type: "group-create", objs: created });
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't duplicate that selection");
+    }
+  }
+
   function handleDeleteObject(id: string) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
@@ -1581,6 +1693,7 @@ export function CollectionCanvas({
           <CanvasObjectToolbar
             obj={selectedObj}
             onChange={(patch) => handleObjectStyleChange(selectedObj.id, patch)}
+            onDuplicate={() => void handleDuplicateObject(selectedObj.id)}
             onDelete={() => handleDeleteObject(selectedObj.id)}
             style={{
               position: "absolute",
@@ -1602,6 +1715,11 @@ export function CollectionCanvas({
             onDistribute={handleDistribute}
             onBringToFront={handleBringToFront}
             onSendToBack={handleSendToBack}
+            onDuplicate={
+              selectedIds.some((id) => canvasObjectsState.some((o) => o.id === id))
+                ? () => void handleDuplicateSelection()
+                : undefined
+            }
             onDelete={() => void handleDeleteSelection()}
             style={{
               position: "absolute",
@@ -1721,7 +1839,15 @@ export function CollectionCanvas({
                   // compose together rather than fighting over one
                   // property, so a rotated shape still tilts correctly
                   // mid-drag and settles back to its own true angle.
-                  transform: obj.rotation ? `rotate(${obj.rotation}deg)` : undefined,
+                  // Flip is listed AFTER rotate on purpose: CSS applies
+                  // the last-listed function to the object's own local
+                  // coordinates first, so scaleX/scaleY mirror the shape
+                  // in its own unrotated space and rotate() then carries
+                  // that already-mirrored result around — flip and
+                  // rotation stay independent of each other exactly like
+                  // Figma's model, instead of an arrow's flip direction
+                  // silently depending on whatever angle it's rotated to.
+                  transform: canvasObjectTransform(obj),
                   rotate: tilt ? `${tilt}deg` : undefined,
                 }}
               >
