@@ -246,11 +246,17 @@ export function LandingPage() {
             Open the app
           </Link>
         </div>
-        <div
-          aria-hidden
-          className="mt-2 select-none text-center font-heading text-[18vw] leading-none font-semibold tracking-heading text-foreground/[0.06] sm:text-[12vw]"
-        >
-          Glint
+        <div aria-hidden className="mt-2 flex select-none items-center justify-center gap-[2vw]">
+          <Image
+            src="/logo.png"
+            alt=""
+            width={512}
+            height={512}
+            className="w-[14vw] shrink-0 rounded-[22%] opacity-[0.06] sm:w-[9vw]"
+          />
+          <span className="text-center font-heading text-[18vw] leading-none font-semibold tracking-heading text-foreground/[0.06] sm:text-[12vw]">
+            Glint
+          </span>
         </div>
       </footer>
     </div>
