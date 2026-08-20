@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Image from "next/image";
-import { upload } from "@vercel/blob/client";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
@@ -20,6 +19,8 @@ import { extractImageColors } from "@/lib/color-extraction-client";
 import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
 import type { ApiCanvasObject, CanvasObjectType, CanvasShapeVariant } from "@/types/canvas-object";
+import { localFetch } from "@/lib/local/api";
+import { useResolvedImageSrc, putBlob, localBlobRef } from "@/lib/local/blobs";
 
 type Position = { x: number; y: number; w: number; h: number; zIndex: number };
 type NodeRef = { kind: "item"; id: string } | { kind: "object"; id: string };
@@ -367,7 +368,7 @@ export function CollectionCanvas({
       ref.kind === "item"
         ? `/api/collections/${collectionSlug}/items/${ref.id}`
         : `/api/collections/${collectionSlug}/canvas-objects/${ref.id}`;
-    void fetch(url, {
+    void localFetch(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(pos),
@@ -375,7 +376,7 @@ export function CollectionCanvas({
   }
 
   async function createObjectOnServer(input: Record<string, unknown>): Promise<ApiCanvasObject> {
-    const res = await fetch(`/api/collections/${collectionSlug}/canvas-objects`, {
+    const res = await localFetch(`/api/collections/${collectionSlug}/canvas-objects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -407,7 +408,7 @@ export function CollectionCanvas({
       setCanvasObjectsState((prev) =>
         prev.map((o) => (o.id === entry.id ? { ...o, ...entry.before } : o)),
       );
-      void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.id}`, {
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entry.before),
@@ -420,7 +421,7 @@ export function CollectionCanvas({
         return next;
       });
       setSelectedIds((prev) => prev.filter((id) => id !== entry.obj.id));
-      void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
         method: "DELETE",
       });
     } else if (entry.type === "object-delete") {
@@ -460,7 +461,7 @@ export function CollectionCanvas({
       setCanvasObjectsState((prev) =>
         prev.map((o) => (o.id === entry.id ? { ...o, ...entry.after } : o)),
       );
-      void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.id}`, {
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(entry.after),
@@ -481,7 +482,7 @@ export function CollectionCanvas({
         return next;
       });
       setSelectedIds((prev) => prev.filter((id) => id !== entry.obj.id));
-      void fetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${entry.obj.id}`, {
         method: "DELETE",
       });
     } else if (entry.type === "group-delete") {
@@ -494,7 +495,7 @@ export function CollectionCanvas({
       });
       setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
       for (const id of ids) {
-        void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+        void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
       }
     }
   }
@@ -545,7 +546,7 @@ export function CollectionCanvas({
         return next;
       });
       for (const id of objIds) {
-        void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+        void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
       }
       if (objs.length > 1) pushUndo({ type: "group-delete", objs });
       else if (objs.length === 1) pushUndo({ type: "object-delete", obj: objs[0] });
@@ -556,7 +557,7 @@ export function CollectionCanvas({
         const item = items.find((i) => i.id === id);
         if (!item) continue;
         const remaining = item.collections.filter((c) => c.slug !== collectionSlug).map((c) => c.name);
-        void fetch(`/api/items/${id}`, {
+        void localFetch(`/api/items/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ collections: remaining }),
@@ -1117,7 +1118,7 @@ export function CollectionCanvas({
       before: { rotation: r.baseRotation },
       after: { rotation: obj.rotation },
     });
-    void fetch(`/api/collections/${collectionSlug}/canvas-objects/${r.id}`, {
+    void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${r.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rotation: obj.rotation }),
@@ -1233,7 +1234,7 @@ export function CollectionCanvas({
   function schedulePatch(id: string, patch: CanvasObjectPatch) {
     clearTimeout(patchTimers.current[id]);
     patchTimers.current[id] = setTimeout(() => {
-      void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -1257,7 +1258,7 @@ export function CollectionCanvas({
     }
     delete textEditStart.current[id];
     clearTimeout(patchTimers.current[id]);
-    void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
+    void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: obj?.text ?? "" }),
@@ -1274,7 +1275,7 @@ export function CollectionCanvas({
     }
     pushUndo({ type: "object-update", id, before, after: patch });
     setCanvasObjectsState((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
-    void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
+    void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
@@ -1293,7 +1294,7 @@ export function CollectionCanvas({
       return next;
     });
     setSelectedIds((prev) => prev.filter((sid) => sid !== id));
-    void fetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
+    void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, { method: "DELETE" });
   }
 
   // -------------------------------------------------------------------
@@ -1313,23 +1314,20 @@ export function CollectionCanvas({
       cancel: { label: "Cancel", onClick: () => controller.abort() },
     });
     try {
-      const [colors, dims, blob] = await Promise.all([
+      const [colors, dims, blobId] = await Promise.all([
         extractImageColors(file),
         readImageDimensions(file),
-        upload(file.name || `canvas-${Date.now()}.png`, file, {
-          access: "public",
-          handleUploadUrl: "/api/blob/upload-token",
-          abortSignal: controller.signal,
-        }),
+        putBlob(file, file.type),
       ]);
+      if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
 
-      const createRes = await fetch("/api/items", {
+      const createRes = await localFetch("/api/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "image",
-          blobUrl: blob.url,
-          blobPathname: blob.pathname,
+          blobUrl: localBlobRef(blobId),
+          blobPathname: blobId,
           width: dims.width || undefined,
           height: dims.height || undefined,
           fileSizeBytes: file.size,
@@ -1341,7 +1339,7 @@ export function CollectionCanvas({
       if (!createRes.ok) throw new Error("Failed to save image");
       const { item } = await createRes.json();
 
-      await fetch(`/api/items/${item.id}`, {
+      await localFetch(`/api/items/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collections: [collectionName] }),
@@ -1352,7 +1350,7 @@ export function CollectionCanvas({
       const w = 280;
       const h = w / ratio;
       const z = ++maxZ.current;
-      await fetch(`/api/collections/${collectionSlug}/items/${item.id}`, {
+      await localFetch(`/api/collections/${collectionSlug}/items/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x: cx - w / 2, y: cy - h / 2, w, h, zIndex: z }),
@@ -1781,10 +1779,12 @@ export function CollectionCanvas({
 }
 
 function CanvasItemBody({ item }: { item: ApiItem }) {
+  const resolvedBlobSrc = useResolvedImageSrc(item.type === "image" ? item.blobUrl : null);
   if (item.type === "image" && item.blobUrl) {
+    if (!resolvedBlobSrc) return null;
     return (
       <Image
-        src={item.blobUrl}
+        src={resolvedBlobSrc}
         alt={item.title ?? "Saved image"}
         fill
         sizes="400px"

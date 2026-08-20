@@ -865,3 +865,16 @@ html[data-desktop-shell]:not([data-desktop-shell="win32"]):not([data-desktop-she
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Landing page only: a fixed brand blue for the page's primary CTAs
+   (Get started, Download for Mac/Windows), the same value in light AND
+   dark mode — unlike the rest of the app, this one color is meant to
+   stay put regardless of theme rather than shift with it. Set on the
+   root .landing-page wrapper and picked up by inheritance everywhere
+   `bg-primary`/`text-primary` is used underneath it (Button's default
+   variant reads --primary/--primary-foreground), so nothing downstream
+   needs its own override. */
+.landing-page {
+  --primary: #006fff;
+  --primary-foreground: #ffffff;
+}

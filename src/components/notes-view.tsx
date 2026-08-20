@@ -45,6 +45,7 @@ import { groupByDate, formatNoteTimestamp, isToday } from "@/lib/date-groups";
 import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
+import { localFetch } from "@/lib/local/api";
 
 /** "all" and "today" are smart views; anything else is a Collection
  * slug — same three-tier structure as Things' Inbox/Today + custom
@@ -119,7 +120,7 @@ export function NotesView() {
     setCreatingFolder(false);
     setFolderDraft("");
     if (!name) return;
-    await fetch("/api/collections", {
+    await localFetch("/api/collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -136,7 +137,7 @@ export function NotesView() {
     if (!note) return;
     if (note.collections.some((c) => c.slug === folder.slug)) return;
     const names = [...note.collections.map((c) => c.name), folder.name];
-    await fetch(`/api/items/${noteId}`, {
+    await localFetch(`/api/items/${noteId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ collections: names }),
@@ -148,7 +149,7 @@ export function NotesView() {
   }
 
   async function createNote() {
-    const res = await fetch("/api/items", {
+    const res = await localFetch("/api/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "note", title: "" }),
@@ -157,7 +158,7 @@ export function NotesView() {
     if (view !== "all" && view !== "today") {
       const folder = collections.find((c) => c.slug === view);
       if (folder) {
-        await fetch(`/api/items/${item.id}`, {
+        await localFetch(`/api/items/${item.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ collections: [folder.name] }),
@@ -570,7 +571,7 @@ function NoteDetailPane({
   const [title, setTitle] = useState(note.title ?? "");
 
   const saveTitle = useDebouncedCallback(async (value: string) => {
-    await fetch(`/api/items/${note.id}`, {
+    await localFetch(`/api/items/${note.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: value }),
@@ -580,7 +581,7 @@ function NoteDetailPane({
 
   const saveNote = useDebouncedCallback(
     async (payload: { json: JSONContent; text: string }) => {
-      await fetch(`/api/items/${note.id}`, {
+      await localFetch(`/api/items/${note.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bodyJson: payload.json, bodyText: payload.text }),
@@ -591,7 +592,7 @@ function NoteDetailPane({
   );
 
   async function saveTags(tags: string[]) {
-    await fetch(`/api/items/${note.id}`, {
+    await localFetch(`/api/items/${note.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tags }),
@@ -600,7 +601,7 @@ function NoteDetailPane({
   }
 
   async function saveCollections(names: string[]) {
-    await fetch(`/api/items/${note.id}`, {
+    await localFetch(`/api/items/${note.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ collections: names }),

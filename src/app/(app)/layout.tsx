@@ -10,6 +10,7 @@ import { SwrProvider } from "@/components/swr-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CommandPalette } from "@/components/command-palette";
 import { ProductTour } from "@/components/product-tour";
+import { LocalDbInit } from "@/components/local-db-init";
 import { SearchTriggerButton } from "@/components/search-trigger-button";
 import { SettingsTriggerButton } from "@/components/settings-dialog";
 import { SoundUnlocker } from "@/lib/use-sound";
@@ -89,6 +90,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </div>
+      <LocalDbInit />
       <PasteCaptureProvider />
       <ClipboardWatchProvider />
       <ExtensionSyncProvider />

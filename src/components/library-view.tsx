@@ -26,6 +26,7 @@ import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { cn } from "@/lib/utils";
 import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import type { ApiItem, ItemType } from "@/types/item";
+import { localFetch } from "@/lib/local/api";
 
 /** The main Library view is visuals-only by default (images + links) —
  * Notes and Tasks live under their own dedicated tabs instead of
@@ -79,7 +80,7 @@ export function LibraryView({
   const { mutate: globalMutate } = useSWRConfig();
 
   async function createBlank(kind: "note" | "task") {
-    const res = await fetch("/api/items", {
+    const res = await localFetch("/api/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(

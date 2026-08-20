@@ -48,6 +48,7 @@ import { formatNoteTimestamp, isToday } from "@/lib/date-groups";
 import { cn } from "@/lib/utils";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
+import { localFetch } from "@/lib/local/api";
 
 /** "all"/"today"/"completed" are smart views; anything else is a
  * Collection slug (a "List", reusing the exact same folder-membership
@@ -138,7 +139,7 @@ export function TasksView() {
       play("success");
       if (e) triggerConfetti(e.clientX, e.clientY);
     }
-    await fetch(`/api/items/${task.id}`, {
+    await localFetch(`/api/items/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ completed: next }),
@@ -152,7 +153,7 @@ export function TasksView() {
     setCreatingList(false);
     setListDraft("");
     if (!name) return;
-    await fetch("/api/collections", {
+    await localFetch("/api/collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
@@ -165,7 +166,7 @@ export function TasksView() {
     if (!task) return;
     if (task.collections.some((c) => c.slug === list.slug)) return;
     const names = [...task.collections.map((c) => c.name), list.name];
-    await fetch(`/api/items/${taskId}`, {
+    await localFetch(`/api/items/${taskId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ collections: names }),
@@ -177,7 +178,7 @@ export function TasksView() {
   }
 
   async function createTask() {
-    const res = await fetch("/api/items", {
+    const res = await localFetch("/api/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "task", title: "" }),
@@ -186,7 +187,7 @@ export function TasksView() {
     if (view !== "all" && view !== "today" && view !== "completed") {
       const list = collections.find((c) => c.slug === view);
       if (list) {
-        await fetch(`/api/items/${item.id}`, {
+        await localFetch(`/api/items/${item.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ collections: [list.name] }),
@@ -657,7 +658,7 @@ function TaskDetailPane({
   const [title, setTitle] = useState(task.title ?? "");
 
   const saveTitle = useDebouncedCallback(async (value: string) => {
-    await fetch(`/api/items/${task.id}`, {
+    await localFetch(`/api/items/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: value }),
@@ -667,7 +668,7 @@ function TaskDetailPane({
 
   const saveChecklist = useDebouncedCallback(
     async (payload: { json: JSONContent; text: string }) => {
-      await fetch(`/api/items/${task.id}`, {
+      await localFetch(`/api/items/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bodyJson: payload.json, bodyText: payload.text }),
@@ -678,7 +679,7 @@ function TaskDetailPane({
   );
 
   async function saveTags(tags: string[]) {
-    await fetch(`/api/items/${task.id}`, {
+    await localFetch(`/api/items/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tags }),
@@ -687,7 +688,7 @@ function TaskDetailPane({
   }
 
   async function saveCollections(names: string[]) {
-    await fetch(`/api/items/${task.id}`, {
+    await localFetch(`/api/items/${task.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ collections: names }),

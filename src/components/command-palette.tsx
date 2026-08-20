@@ -29,6 +29,8 @@ import { logout } from "@/app/(auth)/login/actions";
 import { cn } from "@/lib/utils";
 import { START_TOUR_EVENT } from "@/components/product-tour";
 import type { ApiItem } from "@/types/item";
+import { localFetch } from "@/lib/local/api";
+import { useResolvedImageSrc } from "@/lib/local/blobs";
 
 type Command = {
   id: string;
@@ -80,7 +82,7 @@ export function CommandPalette() {
 
   const createAndGo = useCallback(
     async (kind: "note" | "task") => {
-      await fetch("/api/items", {
+      await localFetch("/api/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -135,7 +137,7 @@ export function CommandPalette() {
   }, [createAndGo]);
 
   async function createCollection() {
-    await fetch("/api/collections", {
+    await localFetch("/api/collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "New collection" }),
@@ -241,19 +243,7 @@ export function CommandPalette() {
                         }}
                         className="relative size-14 shrink-0 overflow-hidden rounded-lg border border-white/10"
                       >
-                        {r.blobUrl || r.previewImageUrl ? (
-                          <Image
-                            src={r.blobUrl ?? r.previewImageUrl!}
-                            alt=""
-                            fill
-                            className="object-cover"
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center bg-white/8 text-[9px] uppercase text-white/50">
-                            {r.type}
-                          </div>
-                        )}
+                        <RecentThumb item={r} />
                       </button>
                     ))}
                   </div>
@@ -329,3 +319,15 @@ export function CommandPalette() {
 
 const hintKeyClass =
   "flex size-4.5 items-center justify-center rounded bg-white/10 text-white/50";
+
+function RecentThumb({ item }: { item: ApiItem }) {
+  const src = useResolvedImageSrc(item.blobUrl ?? item.previewImageUrl);
+  if (!src) {
+    return (
+      <div className="flex h-full items-center justify-center bg-white/8 text-[9px] uppercase text-white/50">
+        {item.type}
+      </div>
+    );
+  }
+  return <Image src={src} alt="" fill className="object-cover" unoptimized />;
+}

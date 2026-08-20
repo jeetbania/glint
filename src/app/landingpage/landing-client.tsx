@@ -176,7 +176,7 @@ const STEPS = [
 const FAQS = [
   {
     q: "Is Glint free?",
-    a: "Yes. Glint is free while it's in beta. If that ever changes, nothing you've already saved goes away.",
+    a: "Yes. Glint is free, and is only to be distributed within members of NEM currently.",
   },
   {
     q: "What can I save in it?",
@@ -326,7 +326,7 @@ export function LandingPage() {
         >
           <Button
             size="lg"
-            className="px-5"
+            className="h-12 px-6 text-base"
             onClick={() =>
               document.getElementById("download")?.scrollIntoView({ behavior: "smooth" })
             }
@@ -490,7 +490,7 @@ export function LandingPage() {
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button
               size="lg"
-              className="w-full gap-0.5 px-5 sm:w-auto"
+              className="h-12 w-full gap-0.5 px-6 text-base sm:w-auto"
               render={<a href={MAC_DOWNLOAD_URL} />}
             >
               <AppleIcon className="size-5" />
@@ -499,7 +499,7 @@ export function LandingPage() {
             <Button
               size="lg"
               variant="outline"
-              className="w-full gap-0.5 px-5 sm:w-auto"
+              className="h-12 w-full gap-0.5 px-6 text-base sm:w-auto"
               render={<a href={WINDOWS_DOWNLOAD_URL} />}
             >
               <WindowsIcon className="size-5" />

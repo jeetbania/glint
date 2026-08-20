@@ -1,7 +1,9 @@
 "use client";
 
-import { SWRConfig, type Cache } from "swr";
+import { useEffect } from "react";
+import { SWRConfig, useSWRConfig, type Cache } from "swr";
 import { fetcher } from "@/lib/fetcher";
+import { onLocalDbChanged } from "@/lib/local/db";
 
 const CACHE_KEY = "glint:swr-cache";
 
@@ -45,6 +47,20 @@ function localStorageProvider(): Cache {
   return map as unknown as Cache;
 }
 
+/** Data now lives in this browser's own IndexedDB (lib/local/*), not a
+ * shared server DB — a write in one tab is invisible to another tab's
+ * SWR cache until something tells it to look again. local/db.ts
+ * broadcasts on every local write (same mechanism the extension's saves
+ * go through too); this just revalidates everything when that fires.
+ * Same-tab writes don't need this — every mutation site already calls
+ * `mutate()` directly for instant feedback, this only covers the
+ * cross-tab/cross-source case. */
+function CrossTabSync() {
+  const { mutate } = useSWRConfig();
+  useEffect(() => onLocalDbChanged(() => void mutate(() => true)), [mutate]);
+  return null;
+}
+
 export function SwrProvider({ children }: { children: React.ReactNode }) {
   return (
     <SWRConfig
@@ -60,17 +76,19 @@ export function SwrProvider({ children }: { children: React.ReactNode }) {
         // This is a single-user personal app, not a multi-session
         // real-time dashboard — the default `revalidateOnFocus: true`
         // was silently re-fetching every mounted query (items, tags,
-        // colors, collections…) on every window/tab focus, each one a
-        // full network round trip. Against this app's DB latency that
-        // read as a multi-second stall on nearly every alt-tab back in —
-        // the single biggest contributor to the "feels awfully slow"
-        // complaint. Data still loads fresh on mount/navigation and
-        // after every mutation (all writes already call `mutate()`
-        // explicitly), so nothing goes stale in practice.
+        // colors, collections…) on every window/tab focus. That mattered
+        // a lot more back when every read was a real network round trip
+        // to Neon; now that reads are a local IndexedDB lookup it's
+        // cheap either way, but there's still no reason to pay for it on
+        // every alt-tab when nothing changed. Data still loads fresh on
+        // mount/navigation and after every mutation (all writes already
+        // call `mutate()` explicitly, plus CrossTabSync above for writes
+        // from elsewhere), so nothing goes stale in practice.
         revalidateOnFocus: false,
         dedupingInterval: 4000,
       }}
     >
+      <CrossTabSync />
       {children}
     </SWRConfig>
   );

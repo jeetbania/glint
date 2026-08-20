@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { useSound } from "@/lib/use-sound";
 import type { FolderHue } from "@/lib/folder-color";
+import { localFetch } from "@/lib/local/api";
 
 /** Rename/recolor/delete for a Collection, shared between every surface
  * that shows one (the Library folder row, the Notes sidebar's folder
@@ -14,7 +15,7 @@ export function useCollectionActions() {
   async function rename(id: string, slug: string, name: string) {
     const trimmed = name.trim();
     if (!trimmed) return false;
-    const res = await fetch(`/api/collections/${slug}`, {
+    const res = await localFetch(`/api/collections/${slug}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: trimmed }),
@@ -32,7 +33,7 @@ export function useCollectionActions() {
    * mutate()'s own revalidation lands well within one interaction, not
    * worth the complexity of rolling back an optimistic color on failure. */
   async function setColor(slug: string, colorHue: FolderHue) {
-    const res = await fetch(`/api/collections/${slug}`, {
+    const res = await localFetch(`/api/collections/${slug}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ colorHue }),
@@ -46,7 +47,7 @@ export function useCollectionActions() {
   }
 
   async function remove(slug: string, name: string) {
-    const res = await fetch(`/api/collections/${slug}`, { method: "DELETE" });
+    const res = await localFetch(`/api/collections/${slug}`, { method: "DELETE" });
     if (!res.ok) {
       toast.error("Couldn't delete that folder");
       return;

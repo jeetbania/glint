@@ -21,8 +21,10 @@ import { TagEditor } from "@/components/tag-editor";
 import { NoteEditor } from "@/components/note-editor";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { useCollectionNames, useTagNames } from "@/lib/use-suggestions";
+import { useResolvedImageSrc } from "@/lib/local/blobs";
 import type { ApiItem } from "@/types/item";
 import type { JSONContent } from "@tiptap/react";
+import { localFetch } from "@/lib/local/api";
 
 /** Closes the dialog only when the click landed on the element the
  * listener is attached to (not a descendant) — lets any genuinely empty
@@ -88,7 +90,7 @@ function ItemDetailContent({
     );
 
   const saveTitle = useDebouncedCallback(async (value: string) => {
-    await fetch(`/api/items/${item.id}`, {
+    await localFetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: value }),
@@ -99,7 +101,7 @@ function ItemDetailContent({
 
   const saveNote = useDebouncedCallback(
     async (payload: { json: JSONContent; text: string }) => {
-      await fetch(`/api/items/${item.id}`, {
+      await localFetch(`/api/items/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bodyJson: payload.json, bodyText: payload.text }),
@@ -110,7 +112,7 @@ function ItemDetailContent({
   );
 
   async function saveTags(tags: string[]) {
-    await fetch(`/api/items/${item.id}`, {
+    await localFetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tags }),
@@ -120,7 +122,7 @@ function ItemDetailContent({
   }
 
   async function saveCollections(names: string[]) {
-    await fetch(`/api/items/${item.id}`, {
+    await localFetch(`/api/items/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ collections: names }),
@@ -131,14 +133,14 @@ function ItemDetailContent({
   }
 
   async function handleDelete() {
-    await fetch(`/api/items/${item.id}`, { method: "DELETE" });
+    await localFetch(`/api/items/${item.id}`, { method: "DELETE" });
     toast.success("Deleted");
     onClose();
     refreshLibrary();
   }
 
-  const bgImage = item.blobUrl ?? item.previewImageUrl;
-  const downloadHref = item.blobUrl ?? item.previewImageUrl;
+  const bgImage = useResolvedImageSrc(item.blobUrl ?? item.previewImageUrl);
+  const downloadHref = bgImage;
 
   return (
     <div
@@ -325,7 +327,7 @@ function ItemDetailContent({
 function TiltThumbnail({ item }: { item: ApiItem }) {
   const ref = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
-  const src = item.blobUrl ?? item.previewImageUrl;
+  const src = useResolvedImageSrc(item.blobUrl ?? item.previewImageUrl);
   if (!src) return null;
 
   const ratio = item.width && item.height ? item.width / item.height : 1;

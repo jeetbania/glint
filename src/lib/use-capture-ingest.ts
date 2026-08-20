@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback } from "react";
-import { upload } from "@vercel/blob/client";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { extractImageColors } from "@/lib/color-extraction-client";
+import { localFetch } from "@/lib/local/api";
+import { putBlob, localBlobRef } from "@/lib/local/blobs";
 
 /** A pasted/copied string counts as a link only if it's a single bare
  * http(s) URL — a paragraph that merely contains a URL is treated as a
@@ -23,7 +24,10 @@ export function asUrl(text: string): string | null {
   return null;
 }
 
-function readImageDimensions(
+/** Exported for extension-sync-provider.tsx, which needs the exact same
+ * dimension-reading step for images relayed in from the browser
+ * extension's "Save image" action. */
+export function readImageDimensions(
   blob: Blob,
 ): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
@@ -64,23 +68,20 @@ export function useCaptureIngest() {
         cancel: { label: "Cancel", onClick: () => controller.abort() },
       });
       try {
-        const [colors, dims, blob] = await Promise.all([
+        const [colors, dims, blobId] = await Promise.all([
           extractImageColors(file),
           readImageDimensions(file),
-          upload(file.name || `pasted-${Date.now()}.png`, file, {
-            access: "public",
-            handleUploadUrl: "/api/blob/upload-token",
-            abortSignal: controller.signal,
-          }),
+          putBlob(file, file.type),
         ]);
+        if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
 
-        const res = await fetch("/api/items", {
+        const res = await localFetch("/api/items", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: "image",
-            blobUrl: blob.url,
-            blobPathname: blob.pathname,
+            blobUrl: localBlobRef(blobId),
+            blobPathname: blobId,
             width: dims.width || undefined,
             height: dims.height || undefined,
             fileSizeBytes: file.size,
@@ -113,7 +114,7 @@ export function useCaptureIngest() {
         cancel: { label: "Cancel", onClick: () => controller.abort() },
       });
       try {
-        const res = await fetch("/api/items", {
+        const res = await localFetch("/api/items", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(

@@ -1,14 +1,21 @@
+"use client";
+
 import Link from "next/link";
+import useSWR from "swr";
 import { Tag } from "lucide-react";
-import { listTagsWithCounts } from "@/lib/items";
+import type { ApiTag } from "@/types/item";
 
-// Tag counts change on every paste — never serve a build-time snapshot.
-export const dynamic = "force-dynamic";
+type TagWithCount = ApiTag & { count: number };
 
-export default async function TagsPage() {
-  const tags = (await listTagsWithCounts()).filter((t) => t.count > 0);
+// Tags now live in this browser's own IndexedDB (see lib/local/*), not a
+// server DB — there's no build-time snapshot to worry about serving
+// stale, so this is a plain client fetch instead of a force-dynamic
+// Server Component reading the DB directly.
+export default function TagsPage() {
+  const { data, isLoading } = useSWR<{ tags: TagWithCount[] }>("/api/tags");
+  const tags = data?.tags ?? [];
 
-  if (tags.length === 0) {
+  if (!isLoading && tags.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
         <Tag className="size-6" />

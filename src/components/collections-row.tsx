@@ -27,6 +27,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { localFetch } from "@/lib/local/api";
 
 type CollectionPreview = {
   id: string;
@@ -392,7 +393,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
     setCreating(false);
     setDraft("");
     if (!name) return;
-    await fetch("/api/collections", {
+    await localFetch("/api/collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useId, useState } from "react";
+import { isLocalBlobRef, resolveBlobSrc } from "@/lib/local/blobs";
 
 /** Deterministic 1-4 pick from React's own per-instance id, not
  * Math.random() — random would run once during SSR and again during
@@ -70,12 +71,35 @@ export function SkeletonImage({
   // setState during render, not in an effect), same fix used for the
   // command palette's deep-link navigation in library-view.tsx.
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  // A `local-blob:` reference (see lib/local/blobs.ts) isn't directly
+  // renderable — it's a pointer into this browser's IndexedDB, not a
+  // URL. Resolve it to a real object URL before handing it to <Image>;
+  // a real http(s) src (bundled demo images, scraped link previews)
+  // passes straight through untouched, synchronously, at render time
+  // (folded into the same prevSrc comparison below) — no extra flash of
+  // skeleton for those, and no setState-during-effect for a case that
+  // was never actually async to begin with.
+  const [resolvedSrc, setResolvedSrc] = useState<typeof src | null>(() =>
+    typeof src === "string" && isLocalBlobRef(src) ? null : src,
+  );
   const [prevSrc, setPrevSrc] = useState(src);
   if (src !== prevSrc) {
     setPrevSrc(src);
     setLoaded(false);
     setShowSkeleton(true);
+    setResolvedSrc(typeof src === "string" && isLocalBlobRef(src) ? null : src);
   }
+
+  useEffect(() => {
+    if (typeof src !== "string" || !isLocalBlobRef(src)) return;
+    let cancelled = false;
+    void resolveBlobSrc(src).then((url) => {
+      if (!cancelled) setResolvedSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -86,21 +110,23 @@ export function SkeletonImage({
   return (
     <>
       {showSkeleton && <ImageSkeleton visible={!loaded} />}
-      <Image
-        {...rest}
-        src={src}
-        alt={alt}
-        className={className}
-        onLoad={(e) => {
-          setLoaded(true);
-          onLoad?.(e);
-        }}
-        style={{
-          ...style,
-          opacity: loaded ? 1 : 0,
-          transition: "opacity 280ms ease-out",
-        }}
-      />
+      {resolvedSrc && (
+        <Image
+          {...rest}
+          src={resolvedSrc}
+          alt={alt}
+          className={className}
+          onLoad={(e) => {
+            setLoaded(true);
+            onLoad?.(e);
+          }}
+          style={{
+            ...style,
+            opacity: loaded ? 1 : 0,
+            transition: "opacity 280ms ease-out",
+          }}
+        />
+      )}
     </>
   );
 }
