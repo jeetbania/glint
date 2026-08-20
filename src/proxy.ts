@@ -17,7 +17,10 @@ export async function proxy(_request: NextRequest) {
 }
 
 export const config = {
-  // Gate everything except the login page itself, its server action, and
-  // Next.js internals/static assets.
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|manifest.json).*)"],
+  // Gate everything except the login page itself, its server action,
+  // the public marketing landing page, and Next.js internals/static
+  // assets. /landingpage stays excluded even with the gate switched off
+  // above, so re-enabling the gate later doesn't accidentally lock
+  // visitors out of the one page that's supposed to be public.
+  matcher: ["/((?!login|landingpage|_next/static|_next/image|favicon.ico|manifest.json).*)"],
 };
