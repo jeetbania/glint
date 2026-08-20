@@ -18,12 +18,14 @@ import {
   Laptop,
   Download,
   Check,
+  Compass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import { isElectron } from "@/lib/is-electron";
 import { cn } from "@/lib/utils";
+import { START_TOUR_EVENT } from "@/components/product-tour";
 import type { ApiItem } from "@/types/item";
 
 const SECTIONS = [
@@ -281,6 +283,16 @@ function AboutSection() {
         <Check className="size-3.5" />A personal visual bookmarking app —
         paste anything, find it later.
       </p>
+      {/* Closes the settings dialog on click (via DialogPrimitive.Close)
+          so the tour's own spotlight isn't fighting this modal for
+          focus/visibility underneath it. */}
+      <DialogPrimitive.Close
+        render={<Button variant="outline" size="sm" className="mt-5 gap-1.5" />}
+        onClick={() => window.dispatchEvent(new Event(START_TOUR_EVENT))}
+      >
+        <Compass className="size-3.5" />
+        Restart the tour
+      </DialogPrimitive.Close>
     </div>
   );
 }

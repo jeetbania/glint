@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Masonry from "react-masonry-css";
 import useSWR, { useSWRConfig } from "swr";
-import { Search, Plus, StickyNote, CheckSquare } from "lucide-react";
+import { toast } from "sonner";
+import { Search, Plus, StickyNote, CheckSquare, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import { FilterMenu } from "@/components/filter-menu";
 import { SortMenu, type SortValue } from "@/components/sort-menu";
 import { SizeSlider } from "@/components/size-slider";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { cn } from "@/lib/utils";
 import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import type { ApiItem, ItemType } from "@/types/item";
 
@@ -115,9 +117,28 @@ export function LibraryView({
   // itself (the browser extension, the desktop clipboard watcher on
   // another device) show up here on their own within half a minute,
   // instead of needing a manual reload to notice them.
-  const { data, isLoading } = useSWR<{ items: ApiItem[] }>(queryKey, {
+  const { data, isLoading, mutate: mutateItems } = useSWR<{ items: ApiItem[] }>(queryKey, {
     refreshInterval: 30000,
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Manual escape hatch for the 30s background poll above — saved from
+  // another device (the extension, the desktop clipboard watcher) can
+  // otherwise sit unseen for up to that long. Re-fetches this grid and
+  // the collections row together rather than a full page reload, so
+  // scroll position/filters/open dialogs aren't disturbed.
+  async function refreshLibrary() {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        mutateItems(),
+        globalMutate((key) => typeof key === "string" && key.startsWith("/api/collections")),
+      ]);
+      toast.success("Library refreshed");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   const items = data?.items ?? [];
   const breakpoints = {
@@ -161,6 +182,16 @@ export function LibraryView({
             />
             <SortMenu value={sort} onChange={setSort} />
             <SizeSlider columns={columns} onChange={setColumns} />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Refresh library"
+              disabled={isRefreshing}
+              onClick={() => void refreshLibrary()}
+            >
+              <RefreshCw className={cn("size-4", isRefreshing && "animate-spin")} />
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={

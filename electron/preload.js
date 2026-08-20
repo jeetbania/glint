@@ -11,6 +11,14 @@ contextBridge.exposeInMainWorld("glint", {
   // incidental. See src/lib/is-electron.ts.
   isElectron: true,
 
+  // "darwin" | "win32" | "linux" — lets the renderer tell macOS's
+  // custom hidden-titlebar/traffic-light window apart from Windows'
+  // normal framed one (electron/main.js only applies the hidden
+  // titlebar on darwin; see the platform check there), so CSS doesn't
+  // reserve a traffic-light strip that has nothing to reserve space
+  // for on Windows. See desktop-shell-adjustments.tsx.
+  platform: process.platform,
+
   /** Subscribes to clipboard-watch captures relayed from the main
    * process (electron/main.js's clipboard poller). Returns an unlisten
    * function, matching the shape @tauri-apps/api/event's `listen()`

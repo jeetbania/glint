@@ -5,7 +5,7 @@
 // in dev — not a bundled local copy of the Next.js build. That's why
 // electron-builder only needs to package this directory plus icons, not
 // the whole app.
-const { app, BrowserWindow, clipboard } = require("electron");
+const { app, BrowserWindow, clipboard, nativeTheme } = require("electron");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
@@ -14,9 +14,26 @@ const DEV_URL = "http://localhost:3000";
 
 // macOS traffic-light position, centered inside the dedicated 24px
 // (1.5rem) titlebar strip reserved for them — see globals.css's
-// [data-titlebar-strip] rule. Ignored on Windows/Linux (no custom
-// traffic lights there; Electron draws its own standard frame).
+// [data-titlebar-strip="darwin"] rule.
 const TRAFFIC_LIGHT_POSITION = { x: 12, y: 6 };
+const isMac = process.platform === "darwin";
+const isWindows = process.platform === "win32";
+
+// Matches globals.css's --background token (light #ffffff / dark
+// #08080a). Used as the real, opaque native backgroundColor on
+// Windows/Linux — NOT `transparent: true` there, unlike macOS. macOS's
+// `vibrancy` option has been reliably supported for years, but
+// Windows' equivalent (`backgroundMaterial: "mica"`) only works on
+// Windows 11 build 22621+, and Linux has no native vibrancy at all in
+// Electron; a `transparent: true` window with nothing actually
+// compositing behind it renders as a broken, see-through void rather
+// than degrading gracefully. A plain solid color matching the app's
+// own theme is the correct universal fallback — backgroundMaterial
+// still upgrades it to real Mica wherever the OS supports it, but the
+// window looks right either way instead of gambling on OS version.
+function nativeBackgroundColor() {
+  return nativeTheme.shouldUseDarkColors ? "#08080a" : "#ffffff";
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -30,17 +47,39 @@ function createWindow() {
     // Transparent + real OS vibrancy (not a CSS approximation) — the
     // window itself carries the material; the app's own glass panels
     // layer their own blur on top, same combination native macOS apps
-    // (Mail, Notes) use. `vibrancy`/`backgroundMaterial` are the direct
-    // Electron equivalents of what the old Tauri shell needed the
-    // window-vibrancy crate + macOS-private-API entitlement for — no
-    // private API here, this is a fully public, documented option.
-    transparent: true,
-    backgroundColor: "#00000000",
-    vibrancy: "sidebar", // macOS
-    visualEffectState: "active",
-    backgroundMaterial: "mica", // Windows 11 — no-ops elsewhere
-    titleBarStyle: "hidden",
-    trafficLightPosition: TRAFFIC_LIGHT_POSITION,
+    // (Mail, Notes) use. `vibrancy` is the direct Electron equivalent
+    // of what the old Tauri shell needed the window-vibrancy crate +
+    // macOS-private-API entitlement for — no private API here, this is
+    // a fully public, documented option. Windows/Linux get a solid,
+    // theme-matched backgroundColor instead (see nativeBackgroundColor
+    // above) — backgroundMaterial: "mica" then upgrades that to real
+    // vibrancy on Windows 11 builds that support it, without ever
+    // risking a transparent window with nothing behind it.
+    ...(isMac
+      ? {
+          transparent: true,
+          backgroundColor: "#00000000",
+          vibrancy: "sidebar",
+          visualEffectState: "active",
+        }
+      : {
+          backgroundColor: nativeBackgroundColor(),
+          ...(isWindows ? { backgroundMaterial: "mica" } : {}),
+        }),
+    // titleBarStyle: "hidden" is macOS-only here on purpose. On
+    // Windows/Linux, "hidden" DOES take effect (unlike what an earlier
+    // comment here assumed) — it removes the native frame, but without
+    // a titleBarOverlay to draw replacement minimize/maximize/close
+    // buttons, the window ends up with no window controls at all, only
+    // closable via Alt+F4. Rather than hand-tune a custom overlay (drawn
+    // controls, colors, hit-testing) with no real Windows machine to
+    // verify it on, Windows/Linux just get Electron's normal framed
+    // window — guaranteed-correct native controls, at the cost of the
+    // custom-traffic-light polish, which was never a Windows convention
+    // to begin with anyway.
+    ...(isMac
+      ? { titleBarStyle: "hidden", trafficLightPosition: TRAFFIC_LIGHT_POSITION }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

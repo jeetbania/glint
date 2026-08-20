@@ -10,6 +10,7 @@ export function SearchTriggerButton() {
   return (
     <button
       type="button"
+      data-tour="search"
       onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
       className="glass-pill flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground transition-all hover:brightness-105"
     >

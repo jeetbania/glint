@@ -407,7 +407,7 @@ export function CollectionsRow({ activeSlug }: { activeSlug?: string | null }) {
     // Overflow spec — which strips this row's flexbox automatic minimum
     // height, letting the masonry grid below squeeze it down to a
     // near-zero sliver instead of its real tile height.
-    <div className="flex shrink-0 items-end gap-4 overflow-x-auto px-6 pb-1 pt-8">
+    <div data-tour="collections" className="flex shrink-0 items-end gap-4 overflow-x-auto px-6 pb-1 pt-8">
       {collections.map((c) => (
         <FolderTile key={c.id} collection={c} active={activeSlug === c.slug} />
       ))}

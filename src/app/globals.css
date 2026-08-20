@@ -219,8 +219,13 @@ html[data-desktop-shell] body {
    layout) that no app UI shares — so the header goes back to being a
    normal part of the floating rounded card, identical in the browser
    and the desktop app, and none of these offset hacks are needed
-   anymore. */
-html[data-desktop-shell] [data-titlebar-strip] {
+   anymore. macOS only (data-desktop-shell="darwin"): Windows uses
+   Electron's normal framed window (electron/main.js only sets
+   titleBarStyle/trafficLightPosition on darwin), which already draws
+   its own native minimize/maximize/close controls above the page, so
+   there's no traffic-light row to reserve this space for there — it'd
+   just be dead space stacked under the real Windows titlebar. */
+html[data-desktop-shell="darwin"] [data-titlebar-strip] {
   height: 1.5rem;
   /* Makes the strip window-draggable — Electron's equivalent of what
      Tauri's data-tauri-drag-region attribute used to do, just a CSS

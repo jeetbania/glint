@@ -23,9 +23,11 @@ import {
   ArrowUp,
   ArrowDown,
   CornerDownLeft,
+  Compass,
 } from "lucide-react";
 import { logout } from "@/app/(auth)/login/actions";
 import { cn } from "@/lib/utils";
+import { START_TOUR_EVENT } from "@/components/product-tour";
 import type { ApiItem } from "@/types/item";
 
 type Command = {
@@ -161,6 +163,12 @@ export function CommandPalette() {
       label: resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode",
       icon: resolvedTheme === "dark" ? Sun : Moon,
       run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
+    },
+    {
+      id: "take-tour",
+      label: "Take a tour",
+      icon: Compass,
+      run: () => window.dispatchEvent(new Event(START_TOUR_EVENT)),
     },
     { id: "logout", label: "Log out", icon: LogOut, run: () => logout() },
   ];

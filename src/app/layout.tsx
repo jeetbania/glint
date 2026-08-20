@@ -12,6 +12,12 @@ const instrumentSans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
+  // Lets every page's relative OG/Twitter image paths (e.g. the landing
+  // page's /landingpage/og-image.png) resolve to a real absolute URL —
+  // required for link-preview cards (iMessage, Slack, X, ...) to
+  // actually find the image; without this Next.js can't turn a
+  // relative path into something an external crawler can fetch.
+  metadataBase: new URL("https://glint-jeetbania.vercel.app"),
   title: "Glint",
   description: "A personal visual bookmarking space for images, links, and notes.",
 };

@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { ArrowRight, Check, Globe, Heart, MousePointerClick, Puzzle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -213,24 +212,12 @@ function FadeIn({
 }
 
 export function LandingPage() {
-  const { theme, setTheme } = useTheme();
-
-  // Opens in light mode every time, regardless of system preference or
-  // whatever theme was last set in the real app, but a real toggle click
-  // (in the hero mockup's header) still flips the *whole* page dark —
-  // this uses the same next-themes context as everywhere else, not a
-  // locked/forced theme, so it can't just be set once as a default.
-  // Restoring the visitor's actual previous theme on unmount means
-  // clicking through to /library doesn't leave them stuck on whatever
-  // this page forced, in either direction.
-  useEffect(() => {
-    const previous = theme;
-    setTheme("light");
-    return () => {
-      if (previous) setTheme(previous);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Theme just follows next-themes normally here — same system-or-
+  // last-chosen default as the rest of the app, no page-specific
+  // override. An earlier version forced this page to always open
+  // light; now that dark mode looks right here too, there's no reason
+  // for the landing page to disagree with the real app about which
+  // theme the visitor wants.
 
   // Smooth scrolling, scoped to this page only — the app-wide version
   // (Lenis) was deliberately removed for feeling like scroll-jacking,
@@ -258,12 +245,29 @@ export function LandingPage() {
           page that gets to be colorful, echoing the reference site's
           rainbow smear above its headline. Everything below stays flat
           and monochrome, per the app's own design language. */}
+      {/* Two separate gradients, not one shared gradient with a
+          dark:opacity-* override — the same multi-hue gradient just
+          dimmed down read as a muddy red/brown in dark mode instead of
+          "the same vibrant blue," because the lower band of the
+          gradient (where the "Get started" button sits) is the
+          orange/transparent tail, and orange at low opacity over
+          near-black desaturates toward brown-red rather than reading
+          as orange. The dark-mode version is blue/indigo end to end
+          instead, so there's no orange band to shift color at all. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] opacity-[0.35] blur-3xl dark:opacity-[0.18]"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] opacity-[0.35] blur-3xl dark:hidden"
         style={{
           background:
             "radial-gradient(60% 100% at 50% 0%, #3b5bdb 0%, #a855f7 35%, #f97316 60%, transparent 75%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-[420px] opacity-[0.28] blur-3xl dark:block"
+        style={{
+          background:
+            "radial-gradient(60% 100% at 50% 0%, #7c93f2 0%, #3b5bdb 45%, #3b5bdb 70%, transparent 85%)",
         }}
       />
 
