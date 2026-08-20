@@ -20,12 +20,17 @@ function BentoCard({
   eyebrow,
   title,
   body,
+  glow,
   children,
 }: {
   className?: string;
   eyebrow: string;
   title: string;
   body: string;
+  /** A subtle color wash in the card's top corner — the same kind of
+   * soft radial glow as the hero's header highlight, just toned way
+   * down and confined to one card instead of the whole page. */
+  glow: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -37,18 +42,23 @@ function BentoCard({
       variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "glass-panel flex flex-col justify-between gap-6 rounded-2xl p-6 sm:p-7",
+        "glass-panel relative flex flex-col justify-between gap-6 overflow-hidden rounded-2xl p-6 sm:p-7",
         className,
       )}
     >
-      <div className="space-y-2">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full opacity-25 blur-3xl dark:opacity-15"
+        style={{ background: glow }}
+      />
+      <div className="relative space-y-2">
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {eyebrow}
         </span>
         <h3 className="font-heading text-xl font-semibold tracking-heading">{title}</h3>
         <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
       </div>
-      {children}
+      <div className="relative">{children}</div>
     </motion.div>
   );
 }
@@ -68,6 +78,7 @@ export function FeatureBento() {
           className="lg:col-span-2"
           eyebrow="Capture"
           title="Drop anything in"
+          glow="radial-gradient(circle, #7dd3fc, transparent 70%)"
           body="Paste an image, drop in a link, or jot a quick note. Glint saves it right away and figures out where it belongs, so nothing sits in a downloads folder."
         >
           <div className="w-full max-w-sm rounded-xl border border-border/60 bg-card/80 p-3 shadow-[0_6px_20px_-8px_rgba(0,0,0,0.3)]">
@@ -97,6 +108,7 @@ export function FeatureBento() {
         <BentoCard
           eyebrow="Color"
           title="Every color, remembered"
+          glow="radial-gradient(circle, #f472b6, transparent 70%)"
           body="Glint reads the colors out of every image you save, so the one moody blue shot is a click away whenever it's the mood you're after."
         >
           <motion.div
@@ -133,6 +145,7 @@ export function FeatureBento() {
         <BentoCard
           eyebrow="Folders"
           title="Folders with their own color"
+          glow="radial-gradient(circle, #fbbf24, transparent 70%)"
           body="Group things into a folder, give it a color, and see what's inside it before you even open it up."
         >
           <motion.div
@@ -176,6 +189,7 @@ export function FeatureBento() {
         <BentoCard
           eyebrow="Notes & tasks"
           title="Not everything is a picture"
+          glow="radial-gradient(circle, #86efac, transparent 70%)"
           body="Write a note, make a checklist, and it lives right alongside everything else you've saved, in the same folders and the same search."
         >
           <div className="w-full max-w-[220px] space-y-1.5 rounded-xl border border-border/60 bg-card p-3">
@@ -201,6 +215,7 @@ export function FeatureBento() {
         <BentoCard
           eyebrow="Search"
           title="Everything, one search away"
+          glow="radial-gradient(circle, #a78bfa, transparent 70%)"
           body="Hit Cmd+K from anywhere in Glint to jump straight to any item, folder, or note, no mouse required."
         >
           <div className="flex w-full items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-2">
@@ -227,6 +242,7 @@ export function FeatureBento() {
           className="lg:col-span-3"
           eyebrow="Privacy"
           title="Private by default"
+          glow="radial-gradient(circle, #94a3b8, transparent 70%)"
           body="Glint is yours. No feed, no algorithm, no one else looking over your shoulder, just a quiet place to keep what matters to you."
         >
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

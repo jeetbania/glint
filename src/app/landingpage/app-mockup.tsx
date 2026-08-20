@@ -17,13 +17,12 @@ import {
   Plus,
   CheckSquare,
   FileText,
-  Sun,
-  Moon,
 } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { GhostBar } from "@/components/ui/ghost-card";
 import { cn } from "@/lib/utils";
 
@@ -187,7 +186,7 @@ function FolderTile({
             }}
           >
             {slot.kind === "image" ? (
-              <Image src={slot.src} alt="" fill className="object-cover" unoptimized />
+              <Image src={slot.src} alt="" fill className="object-cover" sizes="96px" priority />
             ) : (
               <>
                 <div className="mb-0.5 h-1.5 w-3/4 rounded-full bg-foreground/20" />
@@ -202,34 +201,25 @@ function FolderTile({
   );
 }
 
-/** A local, mockup-scoped dark/light toggle — deliberately not the real
- * ThemeToggle. The landing page itself is forced to light mode always
- * (see theme-provider.tsx), so a toggle that called the real
- * next-themes setTheme would visually do nothing here. This one just
- * flips a plain "dark" class on the mockup card's own wrapper instead;
- * Tailwind's dark: variant here is `:is(.dark *)` (globals.css), which
- * matches *any* .dark ancestor, not specifically <html> — so scoping it
- * to this one card and leaving the rest of the page alone works exactly
- * the same way the real ThemeToggle's html-level class does, just
- * contained to the demo instead of the whole page. */
-function MockThemeToggle({ dark, onToggle }: { dark: boolean; onToggle: () => void }) {
-  return (
-    <Button type="button" variant="outline" size="icon-sm" aria-label="Toggle demo theme" onClick={onToggle}>
-      {dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-    </Button>
-  );
-}
-
 /** The interactive centerpiece of the hero — a small, working replica of
- * the app's own shell (real Tabs, real Button/Input, the real
- * folder-tile shape and CSS recipe, and real saved images pulled from
- * the live app) rather than a screenshot or a hand-drawn mockup.
- * Library/Notes/Tasks tabs actually switch, the type-filter pill
- * actually slides, task checkboxes actually toggle, and the theme
- * toggle actually flips this card between light and dark; the toolbar
- * buttons (Filters, Sort, size, folder menus) look real but aren't
- * wired to anything, matching the shallow-on-purpose tradeoff that
- * keeps this page cheap to ship.
+ * the app's own shell (real Tabs, real ThemeToggle, real Button/Input,
+ * the real folder-tile shape and CSS recipe, and real saved images
+ * pulled from the live app) rather than a screenshot or a hand-drawn
+ * mockup. Library/Notes/Tasks tabs actually switch, the type-filter
+ * pill actually slides, task checkboxes actually toggle, and the theme
+ * toggle actually flips the whole site's theme (the landing page itself
+ * defaults to light on entry — see landing-client.tsx — but a real
+ * toggle click here genuinely goes dark, page included, not just this
+ * card); the toolbar buttons (Filters, Sort, size, folder menus) look
+ * real but aren't wired to anything, matching the shallow-on-purpose
+ * tradeoff that keeps this page cheap to ship.
+ *
+ * Cropped rather than showing the full scrollable grid — a fixed height
+ * plus a bottom mask-image fade (not an overlay guessing at a
+ * background color, which would break across the light/dark toggle;
+ * masking the actual content to transparent lets the real glass-panel
+ * blur underneath show through correctly either way) turns this into a
+ * contained "peek," not an attempt to be the whole real app.
  *
  * Inert on phones (pointer-events-none below sm): a fiddly tap target
  * at that size does more harm than good. From sm up (tablet and wider)
@@ -238,15 +228,11 @@ export function AppMockup() {
   const [tab, setTab] = useState("library");
   const [typeFilter, setTypeFilter] = useState("all");
   const [tasks, setTasks] = useState(INITIAL_TASKS);
-  const [dark, setDark] = useState(false);
 
   return (
     <div
       data-app-shell
-      className={cn(
-        "glass-panel pointer-events-none mx-auto flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl select-none sm:pointer-events-auto sm:select-auto",
-        dark && "dark",
-      )}
+      className="glass-panel pointer-events-none mx-auto flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl select-none sm:pointer-events-auto sm:select-auto"
     >
       <div className="flex items-center gap-1.5 border-b border-border/60 px-4 pt-3.5">
         <span className="size-2.5 rounded-full bg-[#ff5f57]/70" />
@@ -265,7 +251,7 @@ export function AppMockup() {
             <Image src="/logo.png" alt="" width={22} height={22} className="rounded-[6px]" />
             Glint
           </span>
-          <MockThemeToggle dark={dark} onToggle={() => setDark((d) => !d)} />
+          <ThemeToggle />
         </div>
         <div className="flex justify-center pb-3">
           <Tabs items={TABS} value={tab} onChange={setTab} />
@@ -289,7 +275,7 @@ export function AppMockup() {
           <Button variant="outline" size="icon-sm" tabIndex={-1}>
             <Tag className="size-3.5" />
           </Button>
-          <MockThemeToggle dark={dark} onToggle={() => setDark((d) => !d)} />
+          <ThemeToggle />
           <Button variant="outline" size="icon-sm" tabIndex={-1}>
             <Settings className="size-3.5" />
           </Button>
@@ -299,7 +285,9 @@ export function AppMockup() {
         </div>
       </header>
 
-      <div className="min-h-[420px] overflow-hidden">
+      <div
+        className="relative h-[560px] overflow-hidden sm:h-[640px] [-webkit-mask-image:linear-gradient(to_bottom,black_68%,transparent_94%)] [mask-image:linear-gradient(to_bottom,black_68%,transparent_94%)]"
+      >
         <AnimatePresence mode="wait">
           {tab === "library" && (
             <motion.div
@@ -368,7 +356,14 @@ export function AppMockup() {
                     className="relative mb-3 break-inside-avoid overflow-hidden rounded-xl shadow-[0_6px_16px_-6px_rgba(0,0,0,0.35)]"
                     style={{ aspectRatio: img.w / img.h }}
                   >
-                    <Image src={img.src} alt="" fill className="object-cover" unoptimized sizes="200px" />
+                    <Image
+                      src={img.src}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 45vw, 260px"
+                      priority={i < 3}
+                    />
                     <span
                       className="absolute left-2 top-2 size-3 rounded-full border-2 border-white/80 shadow-[0_1px_4px_rgba(0,0,0,0.4)]"
                       style={{ backgroundColor: img.color }}

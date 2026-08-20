@@ -1,13 +1,53 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "motion/react";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { ArrowRight, Apple, MonitorSmartphone } from "lucide-react";
+import { ArrowRight, Apple, MonitorSmartphone, Globe, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMockup } from "./app-mockup";
 import { FeatureBento } from "./feature-bento";
+
+// Real profile links, pulled from the user's own portfolio site
+// (jeetcreates.cc) rather than guessed. lucide-react doesn't ship brand
+// glyphs (X/Instagram were dropped from the icon set), so these two are
+// small hand-drawn marks matching lucide's own stroke conventions;
+// Globe (an actual lucide icon) stands in for "portfolio."
+const SOCIALS = [
+  { label: "X", href: "https://x.com/figmajeet", Icon: XIcon },
+  { label: "Instagram", href: "https://instagram.com/jeetbania", Icon: InstagramIcon },
+  { label: "Portfolio", href: "https://jeetcreates.cc", Icon: Globe },
+];
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M18.9 2.6h3.1l-6.8 7.8L23.2 21.4h-6.3l-4.9-6.4-5.6 6.4H3.2l7.3-8.3L2.8 2.6h6.4l4.4 5.8ZM17.8 19.5h1.7L8.3 4.4H6.5Z" />
+    </svg>
+  );
+}
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="3" y="3" width="18" height="18" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.2" cy="6.8" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 // Uploaded straight to Vercel Blob (release/Glint-0.1.0-arm64.dmg), not a
 // GitHub release, at the user's call: source stays private for now, this
@@ -74,6 +114,45 @@ function FadeIn({
 }
 
 export function LandingPage() {
+  const { theme, setTheme } = useTheme();
+
+  // Opens in light mode every time, regardless of system preference or
+  // whatever theme was last set in the real app, but a real toggle click
+  // (in the hero mockup's header) still flips the *whole* page dark —
+  // this uses the same next-themes context as everywhere else, not a
+  // locked/forced theme, so it can't just be set once as a default.
+  // Restoring the visitor's actual previous theme on unmount means
+  // clicking through to /library doesn't leave them stuck on whatever
+  // this page forced, in either direction.
+  useEffect(() => {
+    const previous = theme;
+    setTheme("light");
+    return () => {
+      if (previous) setTheme(previous);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Smooth scrolling, scoped to this page only — the app-wide version
+  // (Lenis) was deliberately removed for feeling like scroll-jacking,
+  // but a plain CSS scroll-behavior here only affects anchor jumps
+  // (the "Get started" button, in-page links), not wheel/trackpad
+  // scrolling itself, so it doesn't reintroduce that. Reset on unmount
+  // so it doesn't leak into the rest of the app.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = "smooth";
+    // Tells Next's own router this is intentional, so it doesn't force
+    // an instant jump-scroll on route transitions to fight it — see
+    // https://nextjs.org/docs/messages/missing-data-scroll-behavior
+    root.setAttribute("data-scroll-behavior", "smooth");
+    return () => {
+      root.style.scrollBehavior = previous;
+      root.removeAttribute("data-scroll-behavior");
+    };
+  }, []);
+
   return (
     <div className="relative overflow-x-clip">
       {/* Subtle top-of-page gradient glow — the one spot on the whole
@@ -241,20 +320,51 @@ export function LandingPage() {
       {/* Footer */}
       <footer className="mx-auto w-full max-w-5xl px-4 pb-4 pt-16 sm:pb-6">
         <div className="flex flex-col items-center justify-between gap-4 border-t border-border/60 pt-6 text-sm text-muted-foreground sm:flex-row">
-          <span>A small, personal project by Jeet.</span>
-          <Link href="/library" className="hover:text-foreground">
-            Open the app
-          </Link>
+          <span className="flex items-center gap-1.5">
+            Made with
+            <Heart className="size-3.5 fill-current text-destructive" />
+          </span>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              {SOCIALS.map(({ label, href, Icon }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={label}
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Icon className="size-4" />
+                </a>
+              ))}
+            </div>
+            <span className="h-4 w-px bg-border/60" aria-hidden />
+            <Link href="/library" className="hover:text-foreground">
+              Open the app
+            </Link>
+          </div>
         </div>
-        <div aria-hidden className="mt-2 flex select-none items-center justify-center gap-[2vw]">
+
+        {/* Full, solid brand mark — sized in vw so it scales with the
+            viewport, then capped so it never outgrows the max-w-5xl
+            container it sits in once the viewport is wider than that. */}
+        <div
+          aria-hidden
+          className="mt-2 flex select-none items-center justify-center gap-[2vw] text-foreground"
+        >
           <Image
             src="/logo.png"
             alt=""
             width={512}
             height={512}
-            className="w-[14vw] shrink-0 rounded-[22%] opacity-[0.06] sm:w-[9vw]"
+            className="w-[17vw] max-w-[11rem] shrink-0 rounded-[22%] sm:w-[11vw]"
           />
-          <span className="text-center font-heading text-[18vw] leading-none font-semibold tracking-heading text-foreground/[0.06] sm:text-[12vw]">
+          <span
+            className="text-center font-heading leading-none font-semibold tracking-heading"
+            style={{ fontSize: "clamp(5rem, 20vw, 18rem)" }}
+          >
             Glint
           </span>
         </div>
