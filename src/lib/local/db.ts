@@ -72,8 +72,11 @@ export type LocalCanvasObjectRow = {
   connectorType: string | null;
   startDecoration: string | null;
   endDecoration: string | null;
+  strokeStyle: string | null;
   startBinding: { objectId: string; anchor: string } | null;
   endBinding: { objectId: string; anchor: string } | null;
+  // any object type.
+  locked: boolean;
   createdAt: string;
   updatedAt: string;
 };

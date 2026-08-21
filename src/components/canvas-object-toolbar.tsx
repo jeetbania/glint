@@ -12,8 +12,14 @@ import {
   Square,
   Circle,
   Triangle,
-  ArrowLeft,
+  Diamond,
+  Ban,
   ArrowRight,
+  Minus,
+  MoreHorizontal,
+  Spline,
+  CornerDownRight,
+  Type,
   FlipHorizontal,
   FlipVertical,
   CopyPlus,
@@ -29,7 +35,47 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { ApiCanvasObject, CanvasFontFamily, CanvasTextAlign } from "@/types/canvas-object";
+import type {
+  ApiCanvasObject,
+  CanvasFontFamily,
+  CanvasTextAlign,
+  CanvasConnectorDecoration,
+  CanvasConnectorType,
+  CanvasConnectorStrokeStyle,
+} from "@/types/canvas-object";
+
+const DECORATION_ICON: Record<CanvasConnectorDecoration, typeof Ban> = {
+  none: Ban,
+  arrow: Triangle,
+  line: ArrowRight,
+  circle: Circle,
+  diamond: Diamond,
+};
+const DECORATION_LABEL: Record<CanvasConnectorDecoration, string> = {
+  none: "None",
+  arrow: "Arrow",
+  line: "Line arrow",
+  circle: "Circle",
+  diamond: "Diamond",
+};
+const CONNECTOR_TYPE_ICON: Record<CanvasConnectorType, typeof Minus> = {
+  straight: Minus,
+  curved: Spline,
+  elbow: CornerDownRight,
+};
+const CONNECTOR_TYPE_LABEL: Record<CanvasConnectorType, string> = {
+  straight: "Straight",
+  curved: "Curved",
+  elbow: "Elbow",
+};
+const STROKE_STYLE_ICON: Record<CanvasConnectorStrokeStyle, typeof Minus> = {
+  solid: Minus,
+  dashed: MoreHorizontal,
+};
+const STROKE_STYLE_LABEL: Record<CanvasConnectorStrokeStyle, string> = {
+  solid: "Solid",
+  dashed: "Dashed",
+};
 
 // Only the three real (non-connector) shape variants are choosable from
 // this toolbar's dropdown below — "line"/"arrow"/"elbow-arrow" are
@@ -99,8 +145,12 @@ export type CanvasObjectPatch = Partial<
     | "connectorType"
     | "startDecoration"
     | "endDecoration"
+    | "strokeStyle"
     | "startBinding"
     | "endBinding"
+    // any object type — set via collection-canvas.tsx's context menu,
+    // not through this toolbar's UI.
+    | "locked"
   >
 >;
 
@@ -112,12 +162,16 @@ export type CanvasObjectPatch = Partial<
 export function CanvasObjectToolbar({
   obj,
   onChange,
+  onFlip,
+  onAddLabel,
   onDuplicate,
   onDelete,
   style,
 }: {
   obj: ApiCanvasObject;
   onChange: (patch: CanvasObjectPatch) => void;
+  onFlip: (axis: "horizontal" | "vertical") => void;
+  onAddLabel: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   style?: React.CSSProperties;
@@ -245,26 +299,63 @@ export function CanvasObjectToolbar({
 
       {obj.type === "connector" && (
         <>
+          {/* Text label — a connector has no box for a body of text to
+              live in, so this doesn't join the hasText controls above;
+              it just focuses (creating, if there wasn't one yet) a
+              label centered on the connector's own path. */}
+          <button
+            type="button"
+            aria-label="Add label"
+            title="Add label"
+            onClick={onAddLabel}
+            className="flex h-7 items-center justify-center rounded-full px-2 text-muted-foreground hover:bg-foreground/6 hover:text-foreground"
+          >
+            <Type className="size-3.5" />
+          </button>
+
+          <span className="mx-0.5 h-4 w-px bg-border" />
+
+          <IconPickerDropdown
+            label="Stroke style"
+            value={obj.strokeStyle ?? "solid"}
+            options={["solid", "dashed"] as const}
+            icons={STROKE_STYLE_ICON}
+            labels={STROKE_STYLE_LABEL}
+            onChange={(strokeStyle) => onChange({ strokeStyle })}
+          />
+
+          <IconPickerDropdown
+            label="Connector style"
+            value={obj.connectorType ?? "straight"}
+            options={["straight", "curved", "elbow"] as const}
+            icons={CONNECTOR_TYPE_ICON}
+            labels={CONNECTOR_TYPE_LABEL}
+            onChange={(connectorType) => onChange({ connectorType })}
+          />
+
           {/* Start/end decoration — this IS "line" vs "arrow" vs
-              "two-way arrow" now: all three (plus an elbow connector)
-              are the exact same underlying object, just with these two
-              independently toggled. Each is a plain 2-state toggle
-              (none <-> arrow) since that's the full set of decorations
-              for now. */}
-          <ToolbarToggle
-            label={obj.startDecoration === "arrow" ? "Start: arrow (click to remove)" : "Start: none (click to add arrow)"}
-            active={obj.startDecoration === "arrow"}
-            onClick={() => onChange({ startDecoration: obj.startDecoration === "arrow" ? "none" : "arrow" })}
-          >
-            <ArrowLeft className="size-3.5" />
-          </ToolbarToggle>
-          <ToolbarToggle
-            label={obj.endDecoration === "arrow" ? "End: arrow (click to remove)" : "End: none (click to add arrow)"}
-            active={obj.endDecoration === "arrow"}
-            onClick={() => onChange({ endDecoration: obj.endDecoration === "arrow" ? "none" : "arrow" })}
-          >
-            <ArrowRight className="size-3.5" />
-          </ToolbarToggle>
+              "two-way arrow" now: all three are the exact same
+              underlying object, just with these two independently set —
+              each end has its own full picker (none/arrow/line arrow/
+              circle/diamond), not just a plain on-off toggle. */}
+          <IconPickerDropdown
+            label="Start decoration"
+            value={obj.startDecoration ?? "none"}
+            options={["none", "arrow", "line", "circle", "diamond"] as const}
+            icons={DECORATION_ICON}
+            labels={DECORATION_LABEL}
+            iconFlip
+            onChange={(startDecoration) => onChange({ startDecoration })}
+          />
+          <IconPickerDropdown
+            label="End decoration"
+            value={obj.endDecoration ?? "none"}
+            options={["none", "arrow", "line", "circle", "diamond"] as const}
+            icons={DECORATION_ICON}
+            labels={DECORATION_LABEL}
+            onChange={(endDecoration) => onChange({ endDecoration })}
+          />
+
           <span className="mx-0.5 h-4 w-px bg-border" />
         </>
       )}
@@ -278,26 +369,28 @@ export function CanvasObjectToolbar({
         />
       )}
 
-      {obj.type !== "connector" && (
-        <>
-          <span className="mx-0.5 h-4 w-px bg-border" />
+      <span className="mx-0.5 h-4 w-px bg-border" />
 
-          <ToolbarToggle
-            label="Flip horizontal"
-            active={!!obj.flipX}
-            onClick={() => onChange({ flipX: !obj.flipX })}
-          >
-            <FlipHorizontal className="size-3.5" />
-          </ToolbarToggle>
-          <ToolbarToggle
-            label="Flip vertical"
-            active={!!obj.flipY}
-            onClick={() => onChange({ flipY: !obj.flipY })}
-          >
-            <FlipVertical className="size-3.5" />
-          </ToolbarToggle>
-        </>
-      )}
+      {/* Flip routes through the parent's onFlip rather than setting
+          flipX/flipY directly — a connector's "flip" mirrors its real
+          points (see flipConnectorPoints in collection-canvas.tsx)
+          instead, so it has no persisted on/off state of its own; the
+          button always shows unpressed for one, a real toggle for
+          everything else. */}
+      <ToolbarToggle
+        label="Flip horizontal"
+        active={obj.type !== "connector" && !!obj.flipX}
+        onClick={() => onFlip("horizontal")}
+      >
+        <FlipHorizontal className="size-3.5" />
+      </ToolbarToggle>
+      <ToolbarToggle
+        label="Flip vertical"
+        active={obj.type !== "connector" && !!obj.flipY}
+        onClick={() => onFlip("vertical")}
+      >
+        <FlipVertical className="size-3.5" />
+      </ToolbarToggle>
 
       <span className="mx-0.5 h-4 w-px bg-border" />
 
@@ -362,6 +455,61 @@ function FontSizeStepper({
         </button>
       </div>
     </div>
+  );
+}
+
+/** A small icon-only dropdown that picks one value out of a fixed set —
+ * the shared shape behind the connector toolbar's stroke-style,
+ * connector-style, and start/end-decoration pickers (each just a
+ * different options/icons/labels triple). */
+function IconPickerDropdown<T extends string>({
+  label,
+  value,
+  options,
+  icons,
+  labels,
+  iconFlip,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly T[];
+  icons: Record<T, React.ComponentType<{ className?: string; style?: React.CSSProperties }>>;
+  labels: Record<T, string>;
+  /** Mirrors the TRIGGER's own icon horizontally (cosmetic only — e.g.
+   * the start-decoration picker showing its arrow pointing left, to
+   * read as "this end", while the end picker's points right). */
+  iconFlip?: boolean;
+  onChange: (value: T) => void;
+}) {
+  // TS can't narrow Record<T, X>[T] to X for a generic T well enough to
+  // use directly as a JSX tag — the runtime value genuinely is that
+  // shape (a plain icon component), so this is just satisfying the
+  // type-checker, not asserting anything false.
+  type IconType = React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  const Icon = icons[value] as IconType;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={label}
+        title={label}
+        className="flex h-7 items-center gap-1 rounded-full px-2 hover:bg-foreground/6"
+      >
+        <Icon className="size-3.5" style={iconFlip ? { transform: "scaleX(-1)" } : undefined} />
+        <ChevronDown className="size-3 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-40">
+        {options.map((opt) => {
+          const ItemIcon = icons[opt] as IconType;
+          return (
+            <DropdownMenuItem key={opt} onClick={() => onChange(opt)}>
+              <ItemIcon className="size-4" />
+              {labels[opt]}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

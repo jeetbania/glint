@@ -5,7 +5,32 @@ import Image from "next/image";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
-import { FileText, CheckSquare, Link as LinkIcon, Minus, Plus, LocateFixed } from "lucide-react";
+import {
+  FileText,
+  CheckSquare,
+  Link as LinkIcon,
+  Minus,
+  Plus,
+  LocateFixed,
+  Lock,
+  Unlock,
+  Copy,
+  ClipboardPaste,
+  BringToFront,
+  SendToBack,
+  FlipHorizontal,
+  FlipVertical,
+  Trash2,
+  CopyPlus,
+} from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from "@/components/ui/context-menu";
 import { Tabs } from "@/components/ui/tabs";
 import { CanvasToolbar } from "@/components/canvas-toolbar";
 import {
@@ -171,8 +196,12 @@ function resolveConnectorPoints(
   // still needs its corner re-derived here, or it'd stay stuck at its old
   // position and the connector would render as a diagonal kink instead of
   // a clean right angle. Orientation is taken from the STORED points (not
-  // the just-resolved ones) so it stays stable across renders.
-  if (endpointMoved && resolved.length === 3) {
+  // the just-resolved ones) so it stays stable across renders. Curved
+  // connectors are deliberately exempt — a bezier control point has no
+  // 90°-style constraint to preserve, and force-routing it through
+  // rerouteElbow's L-shaped formula would silently turn a smooth curve
+  // into a right-angle kink the moment its bound target moved.
+  if (endpointMoved && resolved.length === 3 && obj.connectorType === "elbow") {
     return rerouteElbow(resolved[0], resolved[2], elbowOrientation(points));
   }
   return resolved;
@@ -186,6 +215,24 @@ function resolveConnectorPoints(
 function elbowOrientation(points: { x: number; y: number }[]): "h-first" | "v-first" {
   const [start, corner] = points;
   return Math.abs(corner.y - start.y) <= Math.abs(corner.x - start.x) ? "h-first" : "v-first";
+}
+
+/** Mirrors a connector's own points across its bounding-box center on
+ * the given axis — the connector equivalent of flipX/flipY (which apply
+ * to a CSS transform on a sized box; a connector has no box to flip,
+ * only real points to mirror). The center is the same regardless of
+ * boundsForConnectorPoints' padding, since padding expands both sides
+ * of the box equally. */
+function flipConnectorPoints(
+  points: { x: number; y: number }[],
+  axis: "horizontal" | "vertical",
+): { x: number; y: number }[] {
+  const bbox = boundsForConnectorPoints(points);
+  const cx = bbox.x + bbox.w / 2;
+  const cy = bbox.y + bbox.h / 2;
+  return points.map((p) =>
+    axis === "horizontal" ? { x: 2 * cx - p.x, y: p.y } : { x: p.x, y: 2 * cy - p.y },
+  );
 }
 
 /** Re-derives a 3-point elbow's corner from a new start/end, preserving
@@ -218,9 +265,90 @@ function initialElbowRoute(
  * user unit = 1 CSS px), so it inherits the SAME pan/zoom transform as
  * every other object in the same wrapper for free, with zero extra
  * per-connector coordinate math and (critically) no non-uniform scaling
- * of the kind that stretched the old shape-based arrows this replaces. */
-function connectorPathD(points: { x: number; y: number }[]): string {
+ * of the kind that stretched the old shape-based arrows this replaces.
+ * A "curved" connector's 3 points draw as a single quadratic bezier
+ * (the middle point is a genuine curve handle, not a routing corner);
+ * everything else (straight, elbow) is plain straight segments. */
+function connectorPathD(points: { x: number; y: number }[], connectorType?: CanvasConnectorType | null): string {
+  if (connectorType === "curved" && points.length === 3) {
+    const [p0, p1, p2] = points;
+    return `M${p0.x.toFixed(2)},${p0.y.toFixed(2)} Q${p1.x.toFixed(2)},${p1.y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+  }
   return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+}
+
+/** Marker geometry per decoration — a 10x10 local box. "arrow" (filled
+ * triangle) and "line" (an open/unfilled chevron — a second, distinct
+ * arrow style) point along local +x with their tip at x=10, so refX=8
+ * lands the tip almost exactly on the path's real endpoint; "circle" and
+ * "diamond" are symmetric, so they're centered on the endpoint instead
+ * (refX=5). Returns null for "none" (no marker at all). */
+function connectorMarkerGeometry(
+  decoration: CanvasConnectorDecoration | null,
+): { refX: number; refY: number; render: (color: string) => React.ReactNode } | null {
+  switch (decoration) {
+    case "arrow":
+      return { refX: 8, refY: 5, render: (c) => <path d="M0,0 L10,5 L0,10 Z" fill={c} /> };
+    case "line":
+      return {
+        refX: 8,
+        refY: 5,
+        render: (c) => (
+          <path d="M1,1 L9,5 L1,9" fill="none" stroke={c} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+        ),
+      };
+    case "circle":
+      return { refX: 5, refY: 5, render: (c) => <circle cx={5} cy={5} r={4} fill={c} /> };
+    case "diamond":
+      return { refX: 5, refY: 5, render: (c) => <path d="M5,0.5 L9.5,5 L5,9.5 L0.5,5 Z" fill={c} /> };
+    default:
+      return null;
+  }
+}
+
+/** Where a connector's text label sits — the bend/control point for a
+ * 3-point elbow or curve (visually right at the bend, matching FigJam's
+ * own placement), or the plain midpoint for a 2-point straight line. Not
+ * exact bezier-arc-length-midpoint for a curve, just its control point —
+ * a reasonable, simple approximation that's still visually "on the
+ * bend." */
+function connectorLabelPoint(points: { x: number; y: number }[]): { x: number; y: number } {
+  if (points.length === 3) return points[1];
+  return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+}
+
+/** One <marker> def, shared by the real connector and the create-preview
+ * (see ConnectorLayer) — orient="auto"/"auto-start-reverse" is what
+ * makes the decoration automatically track the path's own direction
+ * (rotates as the connector's geometry changes, reverses if the
+ * connector's direction reverses) with zero manual angle math. */
+function ConnectorMarkerDef({
+  id,
+  decoration,
+  color,
+  isStart,
+}: {
+  id: string;
+  decoration: CanvasConnectorDecoration | null;
+  color: string;
+  isStart: boolean;
+}) {
+  const geo = connectorMarkerGeometry(decoration);
+  if (!geo) return null;
+  return (
+    <marker
+      id={id}
+      viewBox="0 0 10 10"
+      refX={geo.refX}
+      refY={geo.refY}
+      markerWidth={CONNECTOR_ARROWHEAD_SIZE}
+      markerHeight={CONNECTOR_ARROWHEAD_SIZE}
+      markerUnits="userSpaceOnUse"
+      orient={isStart ? "auto-start-reverse" : "auto"}
+    >
+      {geo.render(color)}
+    </marker>
+  );
 }
 
 type UndoEntry =
@@ -803,7 +931,12 @@ export function CollectionCanvas({
     setSelectedIds([]);
     setEditingId(null);
 
-    const objIds = ids.filter((id) => kindById.get(id) === "object");
+    // Locked objects are skipped, not deleted — Backspace/Delete/the
+    // context menu's Delete on a locked object should be a no-op, same
+    // as dragging/resizing one already is.
+    const objIds = ids.filter(
+      (id) => kindById.get(id) === "object" && !canvasObjectsState.find((o) => o.id === id)?.locked,
+    );
     const itemIds = ids.filter((id) => kindById.get(id) === "item");
 
     if (objIds.length > 0) {
@@ -881,6 +1014,16 @@ export function CollectionCanvas({
         void handleDuplicateSelection();
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && selectedIds.length > 0) {
+        e.preventDefault();
+        handleCopySelection();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && clipboardRef.current.length > 0) {
+        e.preventDefault();
+        void handlePasteClipboard();
+        return;
+      }
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && selectedObj) {
         // Figma's own flip shortcuts — single-selection only, matching
         // the rich toolbar's flip buttons (a multi-selection flip would
@@ -888,12 +1031,25 @@ export function CollectionCanvas({
         // in place, which is a bigger feature left for later).
         if (e.key.toLowerCase() === "h") {
           e.preventDefault();
-          handleObjectStyleChange(selectedObj.id, { flipX: !selectedObj.flipX });
+          handleFlipSelected("horizontal");
           return;
         }
         if (e.key.toLowerCase() === "v") {
           e.preventDefault();
-          handleObjectStyleChange(selectedObj.id, { flipY: !selectedObj.flipY });
+          handleFlipSelected("vertical");
+          return;
+        }
+      }
+      // FigJam's own bring-to-front/send-to-back shortcuts.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && selectedIds.length > 0) {
+        if (e.key === "]") {
+          e.preventDefault();
+          handleBringToFront();
+          return;
+        }
+        if (e.key === "[") {
+          e.preventDefault();
+          handleSendToBack();
           return;
         }
       }
@@ -1118,10 +1274,14 @@ export function CollectionCanvas({
    * hit-area share the same `d`) and every handle's position. Called
    * every animation frame during any connector drag (create, endpoint,
    * segment, or body) — see processConnectorFrame. */
-  function writeConnectorDom(id: string, points: { x: number; y: number }[]) {
+  function writeConnectorDom(
+    id: string,
+    points: { x: number; y: number }[],
+    connectorType?: CanvasConnectorType | null,
+  ) {
     const els = connectorElRefs.current[id];
     if (!els) return;
-    const d = connectorPathD(points);
+    const d = connectorPathD(points, connectorType);
     if (els.path) els.path.setAttribute("d", d);
     if (els.hitPath) els.hitPath.setAttribute("d", d);
     points.forEach((p, i) => {
@@ -1131,7 +1291,10 @@ export function CollectionCanvas({
         h.setAttribute("cy", String(p.y));
       }
     });
-    if (points.length === 3) {
+    // Elbow-only — a curved connector's middle point is a free curve
+    // handle (already covered by the generic loop above), not a
+    // corner between two draggable straight segments.
+    if (points.length === 3 && connectorType === "elbow") {
       const [start, corner, end] = points;
       const seg0 = els.segHandles[0];
       const seg1 = els.segHandles[1];
@@ -1279,14 +1442,16 @@ export function CollectionCanvas({
   // one of the two is ever active at once).
   // -------------------------------------------------------------------
 
-  type ConnectorEditKind = "start" | "end" | "segment" | "body";
+  type ConnectorEditKind = "start" | "end" | "segment" | "curve-handle" | "body";
   type ConnectorEditDragState = {
     objId: string;
     kind: ConnectorEditKind;
+    connectorType: CanvasConnectorType | null;
     segmentIndex: number; // "segment" only: 0 = start-side, 1 = end-side
     /** Locked in at drag-start from the connector's CURRENT route, so a
      * mid-drag wobble in which delta is bigger can't suddenly flip which
-     * way the elbow bends. Only meaningful for a 3-point elbow. */
+     * way the elbow bends. Elbow only — meaningless for a curved
+     * connector's free-form control point. */
     elbowOrientation: "h-first" | "v-first" | null;
     origPoints: { x: number; y: number }[];
     points: { x: number; y: number }[];
@@ -1307,8 +1472,10 @@ export function CollectionCanvas({
     connectorEditDrag.current = {
       objId: obj.id,
       kind,
+      connectorType: obj.connectorType,
       segmentIndex,
-      elbowOrientation: livePoints.length === 3 ? elbowOrientation(livePoints) : null,
+      elbowOrientation:
+        obj.connectorType === "elbow" && livePoints.length === 3 ? elbowOrientation(livePoints) : null,
       origPoints: livePoints.map((p) => ({ ...p })),
       points: livePoints.map((p) => ({ ...p })),
       startBinding: obj.startBinding,
@@ -1327,6 +1494,9 @@ export function CollectionCanvas({
   }
   function onConnectorSegmentPointerDown(e: React.PointerEvent, obj: ApiCanvasObject, segmentIndex: 0 | 1) {
     beginConnectorEditDrag(e, obj, "segment", segmentIndex);
+  }
+  function onConnectorCurveHandlePointerDown(e: React.PointerEvent, obj: ApiCanvasObject) {
+    beginConnectorEditDrag(e, obj, "curve-handle");
   }
   function onConnectorBodyPointerDown(e: React.PointerEvent, obj: ApiCanvasObject) {
     beginConnectorEditDrag(e, obj, "body");
@@ -1390,7 +1560,7 @@ export function CollectionCanvas({
       create.endBinding = candidate ? { objectId: candidate.objectId, anchor: candidate.anchor } : null;
       const points =
         preset.connectorType === "elbow" ? initialElbowRoute(create.start, end) : [create.start, end];
-      writeConnectorDom(PREVIEW_ID, points);
+      writeConnectorDom(PREVIEW_ID, points, preset.connectorType);
       setHoverBindingIfChanged(candidate);
       connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
       return;
@@ -1456,8 +1626,12 @@ export function CollectionCanvas({
           edit.endBinding = null;
         }
         edit.points = pts;
+      } else if (edit.kind === "curve-handle" && edit.points.length === 3) {
+        // A curved connector's middle point is a genuine free-form curve
+        // handle — no axis constraint, no binding, no re-derivation.
+        edit.points[1] = world;
       }
-      writeConnectorDom(edit.objId, edit.points);
+      writeConnectorDom(edit.objId, edit.points, edit.connectorType);
       connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
     }
   }
@@ -1537,6 +1711,18 @@ export function CollectionCanvas({
     // natively (caret placement, text selection) instead of moving it.
     if (ref.kind === "object" && editingIdRef.current === ref.id) return;
 
+    // A locked object is still selectable (so it can be unlocked again
+    // from the right-click menu) — it just never enters the drag
+    // machinery below, same as a plain click would if it happened to
+    // land with zero movement.
+    if (ref.kind === "object" && canvasObjectsState.find((o) => o.id === ref.id)?.locked) {
+      e.preventDefault();
+      e.stopPropagation();
+      setSelectedIds([ref.id]);
+      setEditingId(null);
+      return;
+    }
+
     const target = e.target as HTMLElement;
     // Block the browser's default mousedown->focus on a text field so a
     // first click can mean "select" without immediately jumping into
@@ -1546,6 +1732,10 @@ export function CollectionCanvas({
 
     const isGroupMember = selectedIds.length > 1 && selectedIds.includes(ref.id);
     let refs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
+    // A locked object caught up in a multi-selection doesn't get dragged
+    // along even when the drag starts from an unlocked sibling.
+    refs = refs.filter((r) => r.kind !== "object" || !canvasObjectsState.find((o) => o.id === r.id)?.locked);
+    if (refs.length === 0) return;
 
     // Dragging a frame takes whatever's currently sitting inside it
     // along for the ride — computed fresh from current positions right
@@ -2005,6 +2195,40 @@ export function CollectionCanvas({
     setEditingId((cur) => (cur === id ? null : cur));
   }
 
+  /** The connector toolbar's "T" button — focuses an existing label, or
+   * (text is null/empty) mounts a fresh empty one and focuses that. The
+   * label <input> itself only renders while there's text OR editingId
+   * matches (see the JSX below), so setting editingId here is what
+   * actually makes a brand-new label appear at all. */
+  function handleAddConnectorLabel(id: string) {
+    setEditingId(id);
+    setPendingFocusId(id);
+  }
+
+  /** Flip horizontal/vertical for the single selected object — routed
+   * through here (rather than straight from the toolbar/shortcut) so a
+   * connector's fundamentally different flip (mirror its real points,
+   * see flipConnectorPoints) and every other object's flipX/flipY toggle
+   * both funnel through one place. Flipping a connector also detaches
+   * any binding on either end, same reasoning as dragging its body: its
+   * shape is being explicitly redefined, not implied by a target object
+   * anymore. */
+  function handleFlipSelected(axis: "horizontal" | "vertical") {
+    if (!selectedObj || selectedObj.locked) return;
+    if (selectedObj.type === "connector" && selectedObj.points) {
+      handleObjectStyleChange(selectedObj.id, {
+        points: flipConnectorPoints(selectedObj.points, axis),
+        startBinding: null,
+        endBinding: null,
+      });
+      return;
+    }
+    handleObjectStyleChange(
+      selectedObj.id,
+      axis === "horizontal" ? { flipX: !selectedObj.flipX } : { flipY: !selectedObj.flipY },
+    );
+  }
+
   function handleObjectStyleChange(id: string, patch: CanvasObjectPatch) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
@@ -2027,6 +2251,34 @@ export function CollectionCanvas({
         patch = { ...patch, x: cx - size / 2, y: cy - size / 2, w: size, h: size };
       } else if (!wasThin && isThin && obj.h > 20) {
         patch = { ...patch, y: cy - 2, h: 4 };
+      }
+    }
+
+    // Switching a connector's routing style (the toolbar's straight/
+    // curved/elbow dropdown) needs its point COUNT converted, not just a
+    // label swap: straight is exactly 2 points, elbow/curved are exactly
+    // 3. Elbow<->curved keeps the same 3 points as-is (the corner just
+    // becomes a freeform curve handle or vice versa); straight<->either
+    // needs a real 3rd point synthesized (or dropped).
+    if (
+      obj.type === "connector" &&
+      patch.connectorType &&
+      patch.connectorType !== obj.connectorType &&
+      obj.points
+    ) {
+      const wasThree = obj.points.length === 3;
+      const needsThree = patch.connectorType !== "straight";
+      if (needsThree && !wasThree) {
+        const [start, end] = obj.points;
+        patch = {
+          ...patch,
+          points:
+            patch.connectorType === "elbow"
+              ? initialElbowRoute(start, end)
+              : [start, { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }, end],
+        };
+      } else if (!needsThree && wasThree) {
+        patch = { ...patch, points: [obj.points[0], obj.points[2]] };
       }
     }
 
@@ -2123,6 +2375,61 @@ export function CollectionCanvas({
       console.error(err);
       toast.error("Couldn't duplicate that selection");
     }
+  }
+
+  // -------------------------------------------------------------------
+  // Copy / paste — an in-app clipboard (a plain ref, not the OS
+  // clipboard), scoped to canvas objects only. Items are Library-backed
+  // content (with real uploaded blobs) rather than plain canvas marks,
+  // so "paste a copy" isn't the same lightweight operation for them —
+  // out of scope here, matching Duplicate's own existing scope.
+  // -------------------------------------------------------------------
+  const clipboardRef = useRef<ApiCanvasObject[]>([]);
+
+  function handleCopySelection() {
+    const objs = selectedIds
+      .map((id) => canvasObjectsState.find((o) => o.id === id))
+      .filter((o): o is ApiCanvasObject => !!o);
+    if (objs.length === 0) return;
+    clipboardRef.current = objs;
+    toast.success(objs.length > 1 ? `Copied ${objs.length} objects` : "Copied");
+  }
+
+  async function handlePasteClipboard() {
+    if (clipboardRef.current.length === 0) return;
+    try {
+      const created = await Promise.all(
+        clipboardRef.current.map((obj) =>
+          recreateObjectOnServer({
+            ...offsetForDuplicate(obj, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
+            zIndex: ++maxZ.current,
+          }),
+        ),
+      );
+      setCanvasObjectsState((prev) => [...prev, ...created]);
+      setPositions((prev) => {
+        const next = { ...prev };
+        for (const c of created) next[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h, zIndex: c.zIndex };
+        return next;
+      });
+      setSelectedIds(created.map((c) => c.id));
+      pushUndo({ type: "group-create", objs: created });
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't paste");
+    }
+  }
+
+  /** Toggles the single selected object's locked state — still
+   * selectable either way, but blocks dragging/resizing/rotating/
+   * flipping/deleting while locked (see the guards next to each of
+   * those). Multi-selection isn't wired to this (right-click's Lock/
+   * Unlock only shows for a single selected object) since a mixed
+   * lock/unlock toggle across several objects has no single obvious
+   * "next state." */
+  function handleToggleLocked() {
+    if (!selectedObj) return;
+    handleObjectStyleChange(selectedObj.id, { locked: !selectedObj.locked });
   }
 
   function handleDeleteObject(id: string) {
@@ -2309,7 +2616,8 @@ export function CollectionCanvas({
   }, [selectedIds, positions]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <ContextMenu>
+    <ContextMenuTrigger className="relative block h-full w-full overflow-hidden">
       {/* Floating filter chips — scoped to this collection only, and
           replace the old top-nav "Boards" concept entirely. Positioning
           and glass-styling live on separate nodes: .glass-pill's
@@ -2431,6 +2739,8 @@ export function CollectionCanvas({
           <CanvasObjectToolbar
             obj={selectedObj}
             onChange={(patch) => handleObjectStyleChange(selectedObj.id, patch)}
+            onFlip={handleFlipSelected}
+            onAddLabel={() => handleAddConnectorLabel(selectedObj.id)}
             onDuplicate={() => void handleDuplicateObject(selectedObj.id)}
             onDelete={() => handleDeleteObject(selectedObj.id)}
             style={{
@@ -2540,6 +2850,9 @@ export function CollectionCanvas({
                 onPointerDown={(e) => onNodePointerDown(e, ref)}
                 onPointerMove={(e) => onNodePointerMove(e, ref)}
                 onPointerUp={(e) => onNodePointerUp(e, ref)}
+                onContextMenu={() => {
+                  if (!selectedIds.includes(item.id)) setSelectedIds([item.id]);
+                }}
                 className={cn(
                   "absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)]",
                   "transition-shadow duration-300 ease-out hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
@@ -2569,7 +2882,7 @@ export function CollectionCanvas({
             if (!pos) return null;
             const ref: NodeRef = { kind: "object", id: obj.id };
             const selected = selectedIds.includes(obj.id);
-            const showHandles = selected && selectedIds.length === 1;
+            const showHandles = selected && selectedIds.length === 1 && !obj.locked;
             return (
               <div
                 key={obj.id}
@@ -2580,9 +2893,12 @@ export function CollectionCanvas({
                 onPointerDown={(e) => onNodePointerDown(e, ref)}
                 onPointerMove={(e) => onNodePointerMove(e, ref)}
                 onPointerUp={(e) => onNodePointerUp(e, ref)}
+                onContextMenu={() => {
+                  if (!selectedIds.includes(obj.id)) setSelectedIds([obj.id]);
+                }}
                 className={cn(
                   "absolute touch-none select-none",
-                  obj.type === "frame" ? "cursor-default" : "cursor-pointer",
+                  obj.locked ? "cursor-default opacity-60" : obj.type === "frame" ? "cursor-default" : "cursor-pointer",
                   selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
                 )}
                 style={{
@@ -2616,6 +2932,11 @@ export function CollectionCanvas({
                   onTextChange={(text) => handleObjectTextChange(obj.id, text)}
                   onTextBlur={() => handleObjectTextBlur(obj.id)}
                 />
+                {obj.locked && (
+                  <div className="pointer-events-none absolute -left-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background shadow-sm">
+                    <Lock className="size-2.5" />
+                  </div>
+                )}
                 {showHandles && (
                   <>
                     <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-foreground/40" />
@@ -2666,41 +2987,16 @@ export function CollectionCanvas({
                 const els = getConnectorEls(obj.id);
                 const selected = selectedIds.length === 1 && selectedIds[0] === obj.id;
                 const stroke = obj.fill ?? "#3B5BDB";
-                const d = connectorPathD(points);
+                const d = connectorPathD(points, obj.connectorType);
                 const startMarkerId = `connector-start-${obj.id}`;
                 const endMarkerId = `connector-end-${obj.id}`;
-                const isElbow = points.length === 3;
+                const isElbow = obj.connectorType === "elbow" && points.length === 3;
+                const isCurved = obj.connectorType === "curved" && points.length === 3;
                 return (
-                  <g key={obj.id}>
+                  <g key={obj.id} opacity={obj.locked ? 0.6 : undefined}>
                     <defs>
-                      {obj.startDecoration === "arrow" && (
-                        <marker
-                          id={startMarkerId}
-                          viewBox="0 0 10 10"
-                          refX="8"
-                          refY="5"
-                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
-                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
-                          markerUnits="userSpaceOnUse"
-                          orient="auto-start-reverse"
-                        >
-                          <path d="M0,0 L10,5 L0,10 Z" fill={stroke} />
-                        </marker>
-                      )}
-                      {obj.endDecoration === "arrow" && (
-                        <marker
-                          id={endMarkerId}
-                          viewBox="0 0 10 10"
-                          refX="8"
-                          refY="5"
-                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
-                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
-                          markerUnits="userSpaceOnUse"
-                          orient="auto"
-                        >
-                          <path d="M0,0 L10,5 L0,10 Z" fill={stroke} />
-                        </marker>
-                      )}
+                      <ConnectorMarkerDef id={startMarkerId} decoration={obj.startDecoration} color={stroke} isStart />
+                      <ConnectorMarkerDef id={endMarkerId} decoration={obj.endDecoration} color={stroke} isStart={false} />
                     </defs>
                     {/* The visible line — thin, exactly what's drawn.
                         Arrowheads are markers on THIS path, generated
@@ -2720,15 +3016,18 @@ export function CollectionCanvas({
                       strokeWidth={CONNECTOR_STROKE_WIDTH}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      markerStart={obj.startDecoration === "arrow" ? `url(#${startMarkerId})` : undefined}
-                      markerEnd={obj.endDecoration === "arrow" ? `url(#${endMarkerId})` : undefined}
+                      strokeDasharray={obj.strokeStyle === "dashed" ? "8 6" : undefined}
+                      markerStart={obj.startDecoration !== "none" ? `url(#${startMarkerId})` : undefined}
+                      markerEnd={obj.endDecoration !== "none" ? `url(#${endMarkerId})` : undefined}
                     />
                     {/* Invisible, much wider hit area — see the
                         CONNECTOR_HIT_STROKE_WIDTH comment: a bare 2.5px
                         line is genuinely hard to click, this makes
                         selecting/dragging a thin arrow easy without
                         changing how anything looks. Also IS the "drag
-                        the whole connector" target. */}
+                        the whole connector" target — unless locked, which
+                        blocks the drag but still allows selecting it
+                        (to unlock from the right-click menu). */}
                     <path
                       ref={(el) => {
                         els.hitPath = el;
@@ -2737,10 +3036,14 @@ export function CollectionCanvas({
                       fill="none"
                       stroke="transparent"
                       strokeWidth={CONNECTOR_HIT_STROKE_WIDTH}
-                      style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                      onPointerDown={(e) => onConnectorBodyPointerDown(e, obj)}
+                      style={{ pointerEvents: "stroke", cursor: obj.locked ? "default" : "pointer" }}
+                      onPointerDown={(e) => {
+                        if (obj.locked) setSelectedIds([obj.id]);
+                        else onConnectorBodyPointerDown(e, obj);
+                      }}
+                      onContextMenu={() => setSelectedIds([obj.id])}
                     />
-                    {selected && (
+                    {selected && !obj.locked && (
                       <>
                         {isElbow && (
                           <>
@@ -2784,6 +3087,24 @@ export function CollectionCanvas({
                             />
                           </>
                         )}
+                        {isCurved && (
+                          // A curved connector's bend is a single, freely
+                          // draggable handle (not axis-constrained like
+                          // elbow's segments) — a filled dot on a stem,
+                          // Figma-style, so it doesn't get confused for
+                          // an endpoint (the hollow circles below).
+                          <circle
+                            ref={(el) => {
+                              els.handles[1] = el;
+                            }}
+                            cx={points[1].x}
+                            cy={points[1].y}
+                            r={5}
+                            fill="var(--primary)"
+                            style={{ pointerEvents: "all", cursor: "grab" }}
+                            onPointerDown={(e) => onConnectorCurveHandlePointerDown(e, obj)}
+                          />
+                        )}
                         {/* Endpoint handles — sit directly on the actual
                             start/end points, not a bounding-box corner,
                             per the "selection UI follows the real
@@ -2820,22 +3141,9 @@ export function CollectionCanvas({
                 const previewMarkerId = "connector-preview-end";
                 return (
                   <g>
-                    {preset.endDecoration === "arrow" && (
-                      <defs>
-                        <marker
-                          id={previewMarkerId}
-                          viewBox="0 0 10 10"
-                          refX="8"
-                          refY="5"
-                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
-                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
-                          markerUnits="userSpaceOnUse"
-                          orient="auto"
-                        >
-                          <path d="M0,0 L10,5 L0,10 Z" fill="#3B5BDB" />
-                        </marker>
-                      </defs>
-                    )}
+                    <defs>
+                      <ConnectorMarkerDef id={previewMarkerId} decoration={preset.endDecoration} color="#3B5BDB" isStart={false} />
+                    </defs>
                     <path
                       ref={(el) => {
                         els.path = el;
@@ -2846,7 +3154,7 @@ export function CollectionCanvas({
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeDasharray="6 4"
-                      markerEnd={preset.endDecoration === "arrow" ? `url(#${previewMarkerId})` : undefined}
+                      markerEnd={preset.endDecoration !== "none" ? `url(#${previewMarkerId})` : undefined}
                     />
                   </g>
                 );
@@ -2892,6 +3200,49 @@ export function CollectionCanvas({
                 );
               })()}
           </svg>
+
+          {/* Connector text labels — plain HTML (not SVG foreignObject,
+              which is finicky for real text input) siblings of the SVG
+              layer, in the same world-coordinate space as everything
+              else in this wrapper. Shown once a label exists OR is
+              actively being typed (empty + not editing => not rendered
+              at all, so blurring away from a label you decided not to
+              fill in just makes it vanish, no explicit cleanup needed). */}
+          {canvasObjectsState
+            .filter((o) => o.type === "connector" && (o.text || editingId === o.id))
+            .map((obj) => {
+              const points = resolveConnectorPoints(obj, positions);
+              if (points.length < 2) return null;
+              const labelPt = connectorLabelPoint(points);
+              return (
+                <div
+                  key={`label-${obj.id}`}
+                  className="absolute z-[900001]"
+                  style={{
+                    left: 0,
+                    top: 0,
+                    transform: `translate(${labelPt.x}px, ${labelPt.y}px) translate(-50%, -50%)`,
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <input
+                    ref={(el) => {
+                      textareaRefs.current[obj.id] = el;
+                    }}
+                    value={obj.text ?? ""}
+                    onFocus={() => {
+                      handleObjectTextFocus(obj.id);
+                      setEditingId(obj.id);
+                    }}
+                    onChange={(e) => handleObjectTextChange(obj.id, e.target.value)}
+                    onBlur={() => handleObjectTextBlur(obj.id)}
+                    placeholder="Label"
+                    className="glass-panel rounded-md border border-border px-2 py-1 text-center text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                    style={{ width: Math.max(56, ((obj.text?.length ?? 0) + 2) * 7) }}
+                  />
+                </div>
+              );
+            })}
         </div>
       </div>
 
@@ -2900,7 +3251,79 @@ export function CollectionCanvas({
           <span className="text-sm text-muted-foreground">Exporting…</span>
         </div>
       )}
-    </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent>
+      {selectedIds.length === 0 ? (
+        clipboardRef.current.length > 0 && (
+          <ContextMenuItem onClick={() => void handlePasteClipboard()}>
+            <ClipboardPaste className="size-4" />
+            Paste
+            <ContextMenuShortcut>⌘V</ContextMenuShortcut>
+          </ContextMenuItem>
+        )
+      ) : (
+        <>
+          <ContextMenuItem onClick={handleCopySelection}>
+            <Copy className="size-4" />
+            Copy
+            <ContextMenuShortcut>⌘C</ContextMenuShortcut>
+          </ContextMenuItem>
+          {clipboardRef.current.length > 0 && (
+            <ContextMenuItem onClick={() => void handlePasteClipboard()}>
+              <ClipboardPaste className="size-4" />
+              Paste
+              <ContextMenuShortcut>⌘V</ContextMenuShortcut>
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem onClick={() => void handleDuplicateSelection()}>
+            <CopyPlus className="size-4" />
+            Duplicate
+            <ContextMenuShortcut>⌘D</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void handleDeleteSelection()} variant="destructive">
+            <Trash2 className="size-4" />
+            Delete
+            <ContextMenuShortcut>⌫</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={handleBringToFront}>
+            <BringToFront className="size-4" />
+            Bring to front
+            <ContextMenuShortcut>]</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={handleSendToBack}>
+            <SendToBack className="size-4" />
+            Send to back
+            <ContextMenuShortcut>[</ContextMenuShortcut>
+          </ContextMenuItem>
+          {selectedObj && !selectedObj.locked && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => handleFlipSelected("horizontal")}>
+                <FlipHorizontal className="size-4" />
+                Flip horizontal
+                <ContextMenuShortcut>⇧H</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => handleFlipSelected("vertical")}>
+                <FlipVertical className="size-4" />
+                Flip vertical
+                <ContextMenuShortcut>⇧V</ContextMenuShortcut>
+              </ContextMenuItem>
+            </>
+          )}
+          {selectedObj && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={handleToggleLocked}>
+                {selectedObj.locked ? <Unlock className="size-4" /> : <Lock className="size-4" />}
+                {selectedObj.locked ? "Unlock" : "Lock"}
+              </ContextMenuItem>
+            </>
+          )}
+        </>
+      )}
+    </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

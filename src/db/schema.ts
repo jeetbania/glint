@@ -233,12 +233,22 @@ export const canvasShapeVariantValues = [
 export type CanvasShapeVariant = (typeof canvasShapeVariantValues)[number];
 
 // A connector's own routing style. "straight" is a direct two-point
-// line/arrow; "elbow" is an axis-aligned, right-angled route.
-export const canvasConnectorTypeValues = ["straight", "elbow"] as const;
+// line/arrow; "elbow" is an axis-aligned, right-angled route; "curved" is
+// a smooth bezier through the same 3-point shape elbow uses, with its
+// middle point acting as a freely-draggable curve handle instead of an
+// axis-locked corner.
+export const canvasConnectorTypeValues = ["straight", "elbow", "curved"] as const;
 export type CanvasConnectorType = (typeof canvasConnectorTypeValues)[number];
 
-export const canvasConnectorDecorationValues = ["none", "arrow"] as const;
+// "arrow" is the original filled-triangle arrowhead (unchanged, so
+// existing connectors don't visually change) — "line" is an open/
+// unfilled chevron, a distinct alternate arrow style, alongside two
+// entirely new decorations.
+export const canvasConnectorDecorationValues = ["none", "arrow", "line", "circle", "diamond"] as const;
 export type CanvasConnectorDecoration = (typeof canvasConnectorDecorationValues)[number];
+
+export const canvasConnectorStrokeStyleValues = ["solid", "dashed"] as const;
+export type CanvasConnectorStrokeStyle = (typeof canvasConnectorStrokeStyleValues)[number];
 
 export const canvasConnectorAnchorValues = ["top", "right", "bottom", "left", "center"] as const;
 export type CanvasConnectorAnchor = (typeof canvasConnectorAnchorValues)[number];
@@ -276,7 +286,9 @@ export const canvasObjects = pgTable(
       .references(() => collections.id, { onDelete: "cascade" }),
     type: text("type", { enum: canvasObjectTypeValues }).notNull(),
 
-    // sticky/text: note body. frame: its label. shape/connector: unused.
+    // sticky/text: note body. frame/connector: its label (a connector's
+    // label always renders centered at its own path midpoint — see
+    // ConnectorLayer). shape: unused.
     text: text("text"),
     // shape only — which primitive to render.
     shapeVariant: text("shape_variant", { enum: canvasShapeVariantValues }),
@@ -309,10 +321,16 @@ export const canvasObjects = pgTable(
     connectorType: text("connector_type", { enum: canvasConnectorTypeValues }),
     startDecoration: text("start_decoration", { enum: canvasConnectorDecorationValues }),
     endDecoration: text("end_decoration", { enum: canvasConnectorDecorationValues }),
+    strokeStyle: text("stroke_style", { enum: canvasConnectorStrokeStyleValues }),
     // Null when that end isn't attached to another object — see
     // CanvasConnectorBinding above.
     startBinding: jsonb("start_binding").$type<CanvasConnectorBinding | null>(),
     endBinding: jsonb("end_binding").$type<CanvasConnectorBinding | null>(),
+
+    // Any object type, not just connectors — blocks dragging/resizing/
+    // rotating/deleting while true (still selectable, so it can be
+    // unlocked again from the right-click menu).
+    locked: boolean("locked").notNull().default(false),
 
     // sticky/shape/frame background fill; null on plain text (no box).
     fill: text("fill"),

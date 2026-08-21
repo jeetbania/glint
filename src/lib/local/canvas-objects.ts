@@ -53,8 +53,10 @@ const DEFAULTS = {
   connectorType: null,
   startDecoration: null,
   endDecoration: null,
+  strokeStyle: null,
   startBinding: null,
   endBinding: null,
+  locked: false,
 } as const;
 
 /** A pre-connector-system row: `type: "shape"` with shapeVariant one of
@@ -122,8 +124,10 @@ function migrateLegacyShapeToConnector(row: LocalCanvasObjectRow): LocalCanvasOb
     connectorType: shapeVariant === "elbow-arrow" ? "elbow" : "straight",
     startDecoration: "none",
     endDecoration: "arrow",
+    strokeStyle: "solid",
     startBinding: null,
     endBinding: null,
+    locked: false,
     rotation: 0,
     flipX: false,
     flipY: false,
@@ -131,10 +135,25 @@ function migrateLegacyShapeToConnector(row: LocalCanvasObjectRow): LocalCanvasOb
   };
 }
 
+/** Rows written before strokeStyle/locked existed don't have them at all
+ * (undefined, not null, in IndexedDB) — give every row a real value the
+ * first time it's read, same lazy-migrate-and-persist approach as
+ * migrateLegacyShapeToConnector above (and folded into the same pass so
+ * a legacy shape only gets written back to IndexedDB once, not twice). */
+function normalizeRow(row: LocalCanvasObjectRow): LocalCanvasObjectRow {
+  const migrated = migrateLegacyShapeToConnector(row);
+  if (migrated.strokeStyle != null && migrated.locked != null) return migrated;
+  return {
+    ...migrated,
+    strokeStyle: migrated.strokeStyle ?? (migrated.type === "connector" ? "solid" : null),
+    locked: migrated.locked ?? false,
+  };
+}
+
 export async function listCanvasObjects(collectionId: string): Promise<LocalCanvasObjectRow[]> {
   const db = await getLocalDb();
   const rows = await db.getAllFromIndex("canvasObjects", "collectionId", collectionId);
-  const migrated = rows.map(migrateLegacyShapeToConnector);
+  const migrated = rows.map(normalizeRow);
   const changed = migrated.filter((row, i) => row !== rows[i]);
   if (changed.length > 0) {
     const tx = db.transaction("canvasObjects", "readwrite");
@@ -161,6 +180,8 @@ export async function createCanvasObject(
     textColor: input.textColor ?? null,
     startBinding: input.startBinding ?? null,
     endBinding: input.endBinding ?? null,
+    strokeStyle: input.strokeStyle ?? (input.type === "connector" ? "solid" : null),
+    locked: input.locked ?? false,
     ...(input.points ? boundsForConnectorPoints(input.points) : null),
     createdAt: ts,
     updatedAt: ts,

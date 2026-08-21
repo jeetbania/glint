@@ -7,12 +7,15 @@ import type {
   CanvasConnectorDecoration,
   CanvasConnectorAnchor,
   CanvasConnectorBinding,
+  CanvasConnectorStrokeStyle,
 } from "@/db/schema";
 
 export type ApiCanvasObject = {
   id: string;
   collectionId: string;
   type: CanvasObjectType;
+  // sticky/text: note body. frame/connector: its label (see the
+  // matching comment on the real canvasObjects.text column).
   text: string | null;
   shapeVariant: CanvasShapeVariant | null;
   x: number;
@@ -37,8 +40,11 @@ export type ApiCanvasObject = {
   connectorType: CanvasConnectorType | null;
   startDecoration: CanvasConnectorDecoration | null;
   endDecoration: CanvasConnectorDecoration | null;
+  strokeStyle: CanvasConnectorStrokeStyle | null;
   startBinding: CanvasConnectorBinding | null;
   endBinding: CanvasConnectorBinding | null;
+  // Any object type — see the schema comment.
+  locked: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -60,4 +66,5 @@ export type {
   CanvasConnectorDecoration,
   CanvasConnectorAnchor,
   CanvasConnectorBinding,
+  CanvasConnectorStrokeStyle,
 };

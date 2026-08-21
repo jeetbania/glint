@@ -8,6 +8,7 @@ import {
   canvasConnectorTypeValues,
   canvasConnectorDecorationValues,
   canvasConnectorAnchorValues,
+  canvasConnectorStrokeStyleValues,
 } from "@/db/schema";
 import { FOLDER_HUE_PALETTE } from "@/lib/folder-color";
 
@@ -154,8 +155,11 @@ export const createCanvasObjectSchema = z.object({
   connectorType: z.enum(canvasConnectorTypeValues).nullable().optional(),
   startDecoration: z.enum(canvasConnectorDecorationValues).nullable().optional(),
   endDecoration: z.enum(canvasConnectorDecorationValues).nullable().optional(),
+  strokeStyle: z.enum(canvasConnectorStrokeStyleValues).nullable().optional(),
   startBinding: connectorBindingSchema.optional(),
   endBinding: connectorBindingSchema.optional(),
+  // any object type.
+  locked: z.boolean().optional(),
 });
 export type CreateCanvasObjectInput = z.infer<typeof createCanvasObjectSchema>;
 
