@@ -55,6 +55,7 @@ export function ExtensionSyncProvider() {
       if (!detail) return;
       const { id, payload } = detail;
       let success = false;
+      console.log(`[glint-extension-sync] received ${payload.kind} save, id=${id}`);
 
       try {
         if (payload.kind === "link") {
@@ -102,8 +103,9 @@ export function ExtensionSyncProvider() {
         toast.success("Saved from the extension", { duration: 2500 });
         void mutate((key) => typeof key === "string" && key.startsWith("/api/items"));
         success = true;
+        console.log(`[glint-extension-sync] id=${id} saved successfully`);
       } catch (error) {
-        console.error("[extension-sync]", error);
+        console.error(`[extension-sync] id=${id} failed`, error);
         toast.error("Couldn't save something the extension sent over");
       } finally {
         if (id) {

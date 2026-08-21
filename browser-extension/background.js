@@ -56,8 +56,11 @@ function notify(title, message) {
 
 async function findOpenTabs() {
   try {
-    return await chrome.tabs.query({ url: `${GLINT_ORIGIN}/*` });
-  } catch {
+    const tabs = await chrome.tabs.query({ url: `${GLINT_ORIGIN}/*` });
+    console.log(`[glint] findOpenTabs: ${tabs.length} matching tab(s)`, tabs.map((t) => t.url));
+    return tabs;
+  } catch (err) {
+    console.log("[glint] findOpenTabs failed", err);
     return [];
   }
 }
@@ -95,8 +98,10 @@ async function queueSave(payload) {
 // confirm it, never per-tab, so 2 tabs open with 1 real app tab among
 // them doesn't also queue a duplicate.
 async function deliver(payload) {
+  console.log(`[glint] deliver: kind=${payload.kind}`, payload.kind === "image" ? `${payload.bytes.byteLength} bytes` : payload.url);
   const tabs = await findOpenTabs();
   if (tabs.length === 0) {
+    console.log("[glint] deliver: no open Glint tabs — queueing");
     await queueSave(payload);
     return;
   }
@@ -105,13 +110,16 @@ async function deliver(payload) {
       if (tab.id === undefined) return false;
       try {
         const ok = await chrome.tabs.sendMessage(tab.id, { type: "glint-extension-save", payload });
+        console.log(`[glint] deliver: tab ${tab.id} (${tab.url}) acked ${ok}`);
         return !!ok;
-      } catch {
+      } catch (err) {
+        console.log(`[glint] deliver: tab ${tab.id} (${tab.url}) sendMessage threw`, err);
         return false;
       }
     }),
   );
   if (!results.some(Boolean)) {
+    console.log("[glint] deliver: no tab acknowledged — queueing as fallback");
     await queueSave(payload);
   }
 }
@@ -120,6 +128,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "glint-drain-queue") return undefined;
   (async () => {
     const { [QUEUE_KEY]: queued = [] } = await chrome.storage.local.get(QUEUE_KEY);
+    console.log(`[glint] drain-queue: ${queued.length} item(s) queued, asked by tab ${sender.tab?.id} (${sender.tab?.url})`);
     if (queued.length === 0) return;
     const tabId = sender.tab?.id;
     if (tabId === undefined) return;
@@ -141,6 +150,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stillQueued.push(payload);
       }
     }
+    console.log(`[glint] drain-queue: ${queued.length - stillQueued.length} delivered, ${stillQueued.length} still queued`);
     await chrome.storage.local.set({ [QUEUE_KEY]: stillQueued });
   })();
   sendResponse?.(true);
@@ -157,9 +167,11 @@ async function saveLink(url, title) {
 // done here instead with OffscreenCanvas so the bytes never leave the
 // user's own machine on their way in.
 async function saveImage(imageUrl, pageTitle) {
+  console.log("[glint] saveImage: fetching", imageUrl);
   const res = await fetch(imageUrl);
   if (!res.ok) throw new Error(`Couldn't download that image (${res.status})`);
   const sourceBlob = await res.blob();
+  console.log(`[glint] saveImage: fetched ${sourceBlob.size} bytes, type ${sourceBlob.type}`);
 
   const bitmap = await createImageBitmap(sourceBlob);
   const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
@@ -174,6 +186,7 @@ async function saveImage(imageUrl, pageTitle) {
   const isGif = sourceBlob.type === "image/gif";
   const outBlob = isGif ? sourceBlob : await canvas.convertToBlob({ type: "image/webp", quality: 0.82 });
   const bytes = await outBlob.arrayBuffer();
+  console.log(`[glint] saveImage: encoded to ${bytes.byteLength} bytes (${outBlob.type}), delivering`);
 
   await deliver({
     kind: "image",

@@ -25,9 +25,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   const id = `glint-save-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let settled = false;
+  console.log(`[glint] content-script: got glint-extension-save (${message.payload?.kind}), dispatching id=${id} on`, location.pathname);
 
   function onResult(event) {
     if (event.detail?.id !== id) return;
+    console.log(`[glint] content-script: got ack for id=${id}, success=${event.detail.success}`);
     finish(!!event.detail.success);
   }
   function finish(success) {
@@ -38,7 +40,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   window.addEventListener("glint-extension-save-result", onResult);
-  setTimeout(() => finish(false), ACK_TIMEOUT_MS);
+  setTimeout(() => {
+    if (!settled) console.log(`[glint] content-script: id=${id} timed out with no ack (nothing listening on this page?)`);
+    finish(false);
+  }, ACK_TIMEOUT_MS);
   window.dispatchEvent(new CustomEvent("glint-extension-save", { detail: { id, payload: message.payload } }));
 
   return true; // keep the message channel open for the async sendResponse above
@@ -51,8 +56,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // net a moment later in case the very first ask landed before the
 // background worker had finished waking up.
 function drainQueue() {
-  chrome.runtime.sendMessage({ type: "glint-drain-queue" }).catch(() => {
+  console.log("[glint] content-script: asking background to drain queue on", location.pathname);
+  chrome.runtime.sendMessage({ type: "glint-drain-queue" }).catch((err) => {
     // Background worker not ready yet — the retry below covers it.
+    console.log("[glint] content-script: drain-queue message failed", err);
   });
 }
 drainQueue();
