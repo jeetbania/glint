@@ -10,6 +10,7 @@ import {
   index,
   uniqueIndex,
   customType,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -203,6 +204,14 @@ export const itemCollections = pgTable(
     w: real("w"),
     h: real("h"),
     zIndex: integer("z_index").notNull().default(0),
+    // When set, x/y above are LOCAL — relative to this frame's own x/y,
+    // not world-absolute — see the CANVAS COORDINATE HIERARCHY comment
+    // on canvasObjects.parentId below (the same field, just living here
+    // since an item's canvas placement lives on this join row rather
+    // than on the item itself).
+    parentId: uuid("parent_id").references((): AnyPgColumn => canvasObjects.id, { onDelete: "set null" }),
+    flipX: boolean("flip_x").notNull().default(false),
+    flipY: boolean("flip_y").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -300,6 +309,15 @@ export const canvasObjects = pgTable(
     // app's generic per-node infrastructure (the positions map, z-order,
     // marquee/frame-containment hit-testing, undo) keeps working
     // unchanged. `points` is the real geometry.
+    //
+    // CANVAS COORDINATE HIERARCHY: when parentId is set, x/y are LOCAL —
+    // relative to the parent frame's own x/y, not world-absolute. World
+    // position is resolved by walking the parent chain and summing local
+    // offsets (recursively, for nested frames) — see resolveWorldPositions
+    // in collection-canvas.tsx, the one place this resolution happens.
+    // parentId null (the default, and every row that predates this
+    // column) means x/y are already world-absolute, so nothing needed
+    // migrating: an unparented object's position is unchanged either way.
     x: real("x").notNull().default(0),
     y: real("y").notNull().default(0),
     w: real("w").notNull().default(220),
@@ -308,6 +326,11 @@ export const canvasObjects = pgTable(
     flipX: boolean("flip_x").notNull().default(false),
     flipY: boolean("flip_y").notNull().default(false),
     zIndex: integer("z_index").notNull().default(0),
+    parentId: uuid("parent_id").references((): AnyPgColumn => canvasObjects.id, { onDelete: "set null" }),
+    // Frame only — clip children to this frame's own bounds (a large
+    // image dragged into a small frame gets visually cropped to it)
+    // rather than letting them render past its edges.
+    clipContent: boolean("clip_content").notNull().default(true),
 
     // --- connector-only fields ---
     // World-space (canvas-coordinate) points: [start, ...bend points,
