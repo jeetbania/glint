@@ -76,7 +76,8 @@ export function CanvasToolbar({
   onAddSticky,
   onAddText,
   onAddShape,
-  onAddFrame,
+  onArmFrameTool,
+  pendingFrameTool,
   pendingConnectorTool,
   onArmConnectorTool,
   onUndo,
@@ -90,7 +91,8 @@ export function CanvasToolbar({
   onAddSticky: () => void;
   onAddText: () => void;
   onAddShape: (variant: CanvasShapeVariant) => void;
-  onAddFrame: () => void;
+  onArmFrameTool: () => void;
+  pendingFrameTool: boolean;
   pendingConnectorTool: ConnectorToolId | null;
   onArmConnectorTool: (id: ConnectorToolId) => void;
   onUndo: () => void;
@@ -101,7 +103,11 @@ export function CanvasToolbar({
 }) {
   return (
     <div className="glass-pill pointer-events-auto flex flex-col items-center gap-1 p-1.5">
-      <ToolButton label="Select (clear selection)" active={!pendingConnectorTool} onClick={onSelectTool}>
+      <ToolButton
+        label="Select (clear selection)"
+        active={!pendingConnectorTool && !pendingFrameTool}
+        onClick={onSelectTool}
+      >
         <MousePointer2 className="size-4" />
       </ToolButton>
 
@@ -160,7 +166,7 @@ export function CanvasToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ToolButton label="Add frame" onClick={onAddFrame}>
+      <ToolButton label="Add frame (drag to draw)" active={pendingFrameTool} onClick={onArmFrameTool}>
         <FrameIcon className="size-4" />
       </ToolButton>
 

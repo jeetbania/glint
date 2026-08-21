@@ -45,6 +45,12 @@ export type ApiCanvasObject = {
   endBinding: CanvasConnectorBinding | null;
   // Any object type — see the schema comment.
   locked: boolean;
+  // Any object type — see the CANVAS COORDINATE HIERARCHY schema comment.
+  // A non-null parentId means x/y above are LOCAL (relative to that
+  // frame), not world-absolute.
+  parentId: string | null;
+  // Frame only.
+  clipContent: boolean;
   createdAt: string;
   updatedAt: string;
 };

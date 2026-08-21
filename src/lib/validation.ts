@@ -122,6 +122,12 @@ export const setItemPositionSchema = z.object({
   w: z.number().positive(),
   h: z.number().positive(),
   zIndex: z.number().int(),
+  // Present only when actually changing (reparenting into/out of a
+  // frame, or flipping) — a plain move/resize PATCH omits these and
+  // leaves them untouched.
+  parentId: z.string().nullable().optional(),
+  flipX: z.boolean().optional(),
+  flipY: z.boolean().optional(),
 });
 
 export const createCanvasObjectSchema = z.object({
@@ -160,6 +166,9 @@ export const createCanvasObjectSchema = z.object({
   endBinding: connectorBindingSchema.optional(),
   // any object type.
   locked: z.boolean().optional(),
+  parentId: z.string().nullable().optional(),
+  // frame only.
+  clipContent: z.boolean().optional(),
 });
 export type CreateCanvasObjectInput = z.infer<typeof createCanvasObjectSchema>;
 

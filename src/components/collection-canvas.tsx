@@ -60,6 +60,13 @@ import { enrichSavedImage } from "@/lib/auto-enrich-image";
 
 type Position = { x: number; y: number; w: number; h: number; zIndex: number };
 type NodeRef = { kind: "item"; id: string } | { kind: "object"; id: string };
+/** An item's saved canvas placement, as the API returns it — Position's
+ * 5 geometry fields (x/y are LOCAL when parentId is set — see the
+ * CANVAS COORDINATE HIERARCHY comment on db/schema.ts's canvasObjects
+ * table) plus parentId/flipX/flipY, which live on the item_collections
+ * join row (an item has no canvas-object row of its own to carry these
+ * on directly). */
+type ItemCanvasMeta = Position & { parentId: string | null; flipX: boolean; flipY: boolean };
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
@@ -426,6 +433,17 @@ function canvasObjectTransform(obj: ApiCanvasObject): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+// Same idea as canvasObjectTransform above, for a library item — items
+// have no rotation (never had a rotate handle), just the flipX/flipY
+// that live on their item_collections row (see itemMeta).
+function itemFlipTransform(meta: { flipX: boolean; flipY: boolean } | undefined): string | undefined {
+  if (!meta) return undefined;
+  const parts: string[] = [];
+  if (meta.flipX) parts.push("scaleX(-1)");
+  if (meta.flipY) parts.push("scaleY(-1)");
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 // Position is painted via `transform: translate()` rather than the
 // `left`/`top` CSS properties — left/top are layout properties, so
 // writing them on every pointermove during a drag forces the browser to
@@ -526,14 +544,14 @@ function defaultObjectFor(
 
 export function CollectionCanvas({
   items,
-  positions: savedPositions,
+  positions: savedItemMeta,
   canvasObjects: initialCanvasObjects,
   collectionSlug,
   collectionName,
   onItemClick,
 }: {
   items: ApiItem[];
-  positions: Record<string, Position>;
+  positions: Record<string, ItemCanvasMeta>;
   canvasObjects: ApiCanvasObject[];
   collectionSlug: string;
   collectionName: string;
@@ -541,15 +559,41 @@ export function CollectionCanvas({
 }) {
   const { mutate } = useSWRConfig();
 
-  // Canvas objects (sticky/text/shape/frame) are fully local, mutable
-  // state — unlike items (edited elsewhere, refreshed via SWR), every
-  // edit to these happens right here, so re-syncing from props on every
-  // background revalidation would clobber in-flight edits. The parent
-  // page keys this component by collectionSlug, so navigating to a
-  // different collection remounts it with fresh initial state instead.
+  // Canvas objects (sticky/text/shape/frame/connector) are fully local,
+  // mutable state — unlike items (edited elsewhere, refreshed via SWR),
+  // every edit to these happens right here, so re-syncing from props on
+  // every background revalidation would clobber in-flight edits. The
+  // parent page keys this component by collectionSlug, so navigating to
+  // a different collection remounts it with fresh initial state instead.
   const [canvasObjectsState, setCanvasObjectsState] = useState<ApiCanvasObject[]>(
     initialCanvasObjects,
   );
+
+  // Items' parentId/flipX/flipY — same "local mutable state seeded from
+  // props" reasoning as canvasObjectsState above, kept SEPARATE from the
+  // geometry (x/y/w/h/zIndex) pipeline below: an item's frame membership
+  // and flip are edited here directly (reparenting, the flip toolbar
+  // action) and need to render immediately, not wait on a PATCH
+  // round-trip through SWR the way geometry already doesn't either (see
+  // overrides below) — items have no canvas-object row of their own to
+  // carry these on, so this is their equivalent of canvasObjectsState.
+  const [itemMeta, setItemMeta] = useState<Record<string, { parentId: string | null; flipX: boolean; flipY: boolean }>>(
+    () => {
+      const out: Record<string, { parentId: string | null; flipX: boolean; flipY: boolean }> = {};
+      for (const [id, m] of Object.entries(savedItemMeta)) {
+        out[id] = { parentId: m.parentId, flipX: m.flipX, flipY: m.flipY };
+      }
+      return out;
+    },
+  );
+
+  /** parentId for ANY node (item or object) — the one place that needs
+   * to know both. */
+  function getParentId(id: string): string | null {
+    const obj = canvasObjectsState.find((o) => o.id === id);
+    if (obj) return obj.parentId;
+    return itemMeta[id]?.parentId ?? null;
+  }
 
   const objectBasePositions = useMemo(() => {
     const out: Record<string, Position> = {};
@@ -558,15 +602,64 @@ export function CollectionCanvas({
     }
     return out;
   }, [canvasObjectsState]);
-  const basePositions = useMemo(
-    () => ({ ...autoLayout(items), ...savedPositions, ...objectBasePositions }),
-    [items, savedPositions, objectBasePositions],
+  const itemGeometry = useMemo(() => {
+    const out: Record<string, Position> = {};
+    for (const [id, m] of Object.entries(savedItemMeta)) {
+      out[id] = { x: m.x, y: m.y, w: m.w, h: m.h, zIndex: m.zIndex };
+    }
+    return out;
+  }, [savedItemMeta]);
+  // RAW positions — x/y here are LOCAL (relative to parent) for anything
+  // with a parentId, world-absolute for anything without one. This is
+  // NOT what gets rendered directly; resolvedBasePositions below walks
+  // the parent chain to turn it into real world coordinates.
+  const rawBasePositions = useMemo(
+    () => ({ ...autoLayout(items), ...itemGeometry, ...objectBasePositions }),
+    [items, itemGeometry, objectBasePositions],
   );
+  // Live drag overrides — ALREADY world-absolute (see processDragFrame/
+  // finishNodeDrag), same as before this coordinate hierarchy existed.
   const [overrides, setOverrides] = useState<Record<string, Position>>({});
-  const positions = useMemo(
-    () => ({ ...basePositions, ...overrides }),
-    [basePositions, overrides],
-  );
+  /** World positions, resolved by walking each node's parent chain and
+   * summing local offsets — recursively, so nested frames (a frame
+   * that's itself the child of another frame) resolve correctly. An
+   * override (a just-committed drag result not yet reflected in
+   * canvasObjectsState/props — see finishNodeDrag's comment on why a
+   * frame's own descendants never get their own override) takes
+   * priority at whatever id it's set on, INCLUDING while resolving an
+   * ancestor partway through a child's own resolution — that's what
+   * makes a frame's children immediately track its new position the
+   * instant a drag commits, without waiting on the PATCH's round trip.
+   * Cycle-guarded (should never happen from normal UI, but a
+   * self-referential parent chain degrading to "just render at your raw
+   * position" beats an infinite loop). */
+  const positions = useMemo(() => {
+    const resolved: Record<string, Position> = {};
+    const resolving = new Set<string>();
+    function resolve(id: string): Position | undefined {
+      if (resolved[id]) return resolved[id];
+      if (overrides[id]) {
+        resolved[id] = overrides[id];
+        return overrides[id];
+      }
+      const raw = rawBasePositions[id];
+      if (!raw) return undefined;
+      const parentId = getParentId(id);
+      if (!parentId || resolving.has(id)) {
+        resolved[id] = raw;
+        return raw;
+      }
+      resolving.add(id);
+      const parentWorld = resolve(parentId);
+      resolving.delete(id);
+      const world = parentWorld ? { ...raw, x: parentWorld.x + raw.x, y: parentWorld.y + raw.y } : raw;
+      resolved[id] = world;
+      return world;
+    }
+    for (const id of new Set([...Object.keys(rawBasePositions), ...Object.keys(overrides)])) resolve(id);
+    return resolved;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawBasePositions, overrides, canvasObjectsState, itemMeta]);
   const setPositions = setOverrides;
 
   const [typeFilter, setTypeFilter] = useState<"all" | ItemType>("all");
@@ -596,34 +689,73 @@ export function CollectionCanvas({
     return { kind: kindById.get(id) === "item" ? "item" : "object", id };
   }
 
-  /** Every item/object whose center currently falls inside a frame's
-   * bounds — recomputed on demand (not persisted), which is what lets
-   * "drag the frame, its contents come along" work without a parent
-   * field or any explicit reparenting step. Other frames are excluded
-   * so frames never drag each other. Connectors are excluded too: they
-   * aren't part of the generic per-node drag machinery this sweeps
-   * along (their real geometry is `points`, not x/y — see the CONNECTOR
-   * CREATION section), so including one here would desync its cached
-   * bounding box from what's actually drawn instead of moving it. A
-   * connector BOUND to something inside the frame still follows
-   * correctly regardless, via resolveConnectorPoints re-resolving
-   * against that target's new (frame-dragged) position on every render —
-   * only a geometrically-overlapping-but-unbound connector doesn't get
-   * swept along, which is a reasonable v1 gap given it wasn't going to
-   * move correctly through this path anyway. */
-  function getFrameContainedIds(framePos: Position, frameId: string): string[] {
-    const ids: string[] = [];
-    for (const it of items) {
-      const p = positions[it.id];
-      if (p && isCenterInside(p, framePos)) ids.push(it.id);
-    }
+  /** Every REAL descendant of frameId (recursive — includes a nested
+   * frame's own children too), from the actual parentId tree, not
+   * geometry. Used only to also move a frame's contents' DOM elements
+   * during a live drag (see onNodePointerDown) so the whole subtree
+   * visibly tracks the pointer — their STORED positions never need to
+   * change when the frame moves (they're local offsets already; see
+   * finishNodeDrag's persistRefs split), so this is purely a "who else
+   * needs their on-screen transform updated this frame" list, never a
+   * "who gets a new PATCH" list. */
+  function getDescendantIds(frameId: string): string[] {
+    const direct: string[] = [];
+    for (const it of items) if (getParentId(it.id) === frameId) direct.push(it.id);
     for (const o of canvasObjectsState) {
-      if (o.id === frameId || o.type === "frame" || o.type === "connector") continue;
-      const p = positions[o.id];
-      if (p && isCenterInside(p, framePos)) ids.push(o.id);
+      if (o.id !== frameId && getParentId(o.id) === frameId) direct.push(o.id);
     }
-    return ids;
+    const all = [...direct];
+    for (const id of direct) {
+      if (canvasObjectsState.find((o) => o.id === id)?.type === "frame") all.push(...getDescendantIds(id));
+    }
+    return all;
   }
+
+  /** Deletes-a-frame helper: reparents each of the frame's DIRECT
+   * children (item or object) onto the canvas at their current world
+   * position, instead of letting them get orphaned/deleted along with
+   * it — "delete unwraps children" from the Frame spec. Nested frames
+   * keep their own children; only the deleted frame's immediate
+   * contents get unwrapped (a nested frame itself becomes a top-level
+   * frame, subtree intact). `excludeIds` skips anything that's about to
+   * be deleted anyway in the same batch (no point reparenting something
+   * that's disappearing in the same action). */
+  function unwrapFrameChildren(frameId: string, excludeIds: Set<string> = new Set()) {
+    const directItemIds = items
+      .filter((it) => getParentId(it.id) === frameId && !excludeIds.has(it.id))
+      .map((it) => it.id);
+    const directObjIds = canvasObjectsState
+      .filter((o) => o.id !== frameId && getParentId(o.id) === frameId && !excludeIds.has(o.id))
+      .map((o) => o.id);
+
+    for (const id of directObjIds) {
+      const worldPos = positions[id];
+      if (!worldPos) continue;
+      setCanvasObjectsState((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, ...worldPos, parentId: null } : o)),
+      );
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...worldPos, parentId: null }),
+      });
+    }
+    for (const id of directItemIds) {
+      const worldPos = positions[id];
+      if (!worldPos) continue;
+      setItemMeta((prev) => {
+        const existing = prev[id] ?? { flipX: false, flipY: false, parentId: null };
+        return { ...prev, [id]: { ...existing, parentId: null } };
+      });
+      void localFetch(`/api/collections/${collectionSlug}/items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...worldPos, parentId: null }),
+      });
+    }
+  }
+
+  /** Does this rect's center fall inside that one. */
   function isCenterInside(pos: Position, container: Position): boolean {
     const cx = pos.x + pos.w / 2;
     const cy = pos.y + pos.h / 2;
@@ -633,6 +765,52 @@ export function CollectionCanvas({
       cy >= container.y &&
       cy <= container.y + container.h
     );
+  }
+
+  /** A child's `clip-path`, if its parent is a clipping frame — computed
+   * as an inset() expressed in the CHILD's own pixel box (inset()'s
+   * lengths are relative to the element it's applied to), rather than
+   * actually nesting the child inside the frame's DOM node. That keeps
+   * every object a flat sibling in one render pass (unchanged — every
+   * other per-node mechanism here, drag/z-order/marquee-select/undo,
+   * assumes that flat structure), while still visually cropping
+   * anything that spills past the frame's own bounds, Figma-style. */
+  function clipPathForChild(id: string, pos: Position): string | undefined {
+    const parentId = getParentId(id);
+    if (!parentId) return undefined;
+    const parentObj = canvasObjectsState.find((o) => o.id === parentId);
+    if (!parentObj || parentObj.type !== "frame" || !parentObj.clipContent) return undefined;
+    const framePos = positions[parentId];
+    if (!framePos) return undefined;
+    const top = Math.max(0, framePos.y - pos.y);
+    const left = Math.max(0, framePos.x - pos.x);
+    const right = Math.max(0, pos.x + pos.w - (framePos.x + framePos.w));
+    const bottom = Math.max(0, pos.y + pos.h - (framePos.y + framePos.h));
+    if (top === 0 && left === 0 && right === 0 && bottom === 0) return undefined;
+    return `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+  }
+
+  /** Which frame (if any) a dragged object at this world position/size
+   * should be reparented into on release — the SMALLEST matching frame
+   * among any whose bounds contain the object's center, so a small
+   * frame nested inside a larger one wins over its ancestor. Excludes
+   * excludeId and everything already descended from it (a frame can
+   * never become a child of its own descendant — including itself). */
+  function findFrameDropTarget(pos: Position, excludeId: string | null): ApiCanvasObject | null {
+    const excludeSet = new Set<string>();
+    if (excludeId) {
+      excludeSet.add(excludeId);
+      for (const id of getDescendantIds(excludeId)) excludeSet.add(id);
+    }
+    let best: { obj: ApiCanvasObject; area: number } | null = null;
+    for (const o of canvasObjectsState) {
+      if (o.type !== "frame" || excludeSet.has(o.id)) continue;
+      const framePos = positions[o.id];
+      if (!framePos || !isCenterInside(pos, framePos)) continue;
+      const area = framePos.w * framePos.h;
+      if (!best || area < best.area) best = { obj: o, area };
+    }
+    return best?.obj ?? null;
   }
 
   const [pan, setPan] = useState({ x: 80, y: 60 });
@@ -708,6 +886,16 @@ export function CollectionCanvas({
   // armed, dragging on the canvas draws a new connector instead of
   // marquee-selecting/panning — see the CONNECTOR CREATION section.
   const [pendingConnectorTool, setPendingConnectorTool] = useState<ConnectorToolId | null>(null);
+  // Same idea, for the frame tool — a frame's whole shape comes from
+  // where you drag too (see FRAME CREATION), so "Add frame" arms it
+  // instead of one-shot-placing a fixed-size frame like it used to.
+  const [pendingFrameTool, setPendingFrameTool] = useState(false);
+  const frameCreateDrag = useRef<{
+    start: { x: number; y: number };
+    startClientX: number;
+    startClientY: number;
+  } | null>(null);
+  const [frameCreatePreview, setFrameCreatePreview] = useState<Position | null>(null);
   // The nearby object (if any) a connector endpoint is currently
   // snapping to — during creation-drag or an existing endpoint-handle
   // drag. Only changes (and re-renders) when the snapped candidate
@@ -715,6 +903,12 @@ export function CollectionCanvas({
   // endpoint's own live position is still painted imperatively every
   // frame (see connectorDrag below), same as every other canvas drag.
   const [hoverBinding, setHoverBinding] = useState<BindingCandidate | null>(null);
+  // Which frame (if any) the primary dragged node would be reparented
+  // into if released right now — updated live during a regular node
+  // drag (see processDragFrame) and only turned into a real reparent at
+  // commitNodePosition on release. Same "only setState when the
+  // candidate id itself changes" cheapness as hoverBinding above.
+  const [hoverFrameId, setHoverFrameId] = useState<string | null>(null);
 
   useEffect(() => {
     if (pendingFocusId && textareaRefs.current[pendingFocusId]) {
@@ -745,7 +939,19 @@ export function CollectionCanvas({
     setRedoStack([]);
   }
 
-  function persistPosition(ref: NodeRef, pos: Position) {
+  /** worldPos -> what actually gets stored: unchanged for an unparented
+   * node, converted to local-relative-to-parent otherwise (see the
+   * CANVAS COORDINATE HIERARCHY comment on canvasObjects.parentId).
+   * Parent membership itself doesn't change here — see
+   * commitNodePosition below for the drag-and-drop-into-a-frame path
+   * that does. */
+  function worldToStoredPosition(id: string, worldPos: Position): Position {
+    const parentId = getParentId(id);
+    const parentPos = parentId ? positions[parentId] : null;
+    return parentPos ? { ...worldPos, x: worldPos.x - parentPos.x, y: worldPos.y - parentPos.y } : worldPos;
+  }
+
+  function persistPosition(ref: NodeRef, worldPos: Position) {
     const url =
       ref.kind === "item"
         ? `/api/collections/${collectionSlug}/items/${ref.id}`
@@ -753,8 +959,53 @@ export function CollectionCanvas({
     void localFetch(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(pos),
+      body: JSON.stringify(worldToStoredPosition(ref.id, worldPos)),
     });
+  }
+
+  /** The drag-commit path for an actually-user-dragged node (as opposed
+   * to a frame's passengers, or a resize/undo/align, all of which use
+   * persistPosition directly since none of them can drop something into
+   * a different frame) — detects whether it should be reparented into
+   * (or out of) a frame based on its FINAL world position, and persists
+   * both the new parent and the recomputed local offset together when
+   * it changes, preserving the exact visual world position either way. */
+  function commitNodePosition(ref: NodeRef, worldPos: Position) {
+    const currentParentId = getParentId(ref.id);
+    const excludeId = ref.kind === "object" ? ref.id : null;
+    const dropTarget = findFrameDropTarget(worldPos, excludeId);
+    const newParentId = dropTarget?.id ?? null;
+    if (newParentId === currentParentId) {
+      persistPosition(ref, worldPos);
+      return;
+    }
+
+    const parentPos = newParentId ? positions[newParentId] : null;
+    const localPos = parentPos
+      ? { ...worldPos, x: worldPos.x - parentPos.x, y: worldPos.y - parentPos.y }
+      : worldPos;
+    const patch = { ...localPos, parentId: newParentId };
+
+    if (ref.kind === "object") {
+      setCanvasObjectsState((prev) =>
+        prev.map((o) => (o.id === ref.id ? { ...o, ...localPos, parentId: newParentId } : o)),
+      );
+      void localFetch(`/api/collections/${collectionSlug}/canvas-objects/${ref.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } else {
+      setItemMeta((prev) => {
+        const existing = prev[ref.id] ?? { flipX: false, flipY: false, parentId: null };
+        return { ...prev, [ref.id]: { ...existing, parentId: newParentId } };
+      });
+      void localFetch(`/api/collections/${collectionSlug}/items/${ref.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    }
   }
 
   async function createObjectOnServer(input: Record<string, unknown>): Promise<ApiCanvasObject> {
@@ -939,6 +1190,15 @@ export function CollectionCanvas({
     );
     const itemIds = ids.filter((id) => kindById.get(id) === "item");
 
+    // Unwrap any deleted frame's children BEFORE removing the frame
+    // itself, so their world positions are still resolvable through it.
+    const deletingSet = new Set([...objIds, ...itemIds]);
+    for (const id of objIds) {
+      if (canvasObjectsState.find((o) => o.id === id)?.type === "frame") {
+        unwrapFrameChildren(id, deletingSet);
+      }
+    }
+
     if (objIds.length > 0) {
       const objs = objIds
         .map((id) => {
@@ -992,6 +1252,7 @@ export function CollectionCanvas({
         setSelectedIds([]);
         setEditingId(null);
         setPendingConnectorTool(null);
+        setPendingFrameTool(false);
         return;
       }
       if (isTyping) return;
@@ -1024,19 +1285,21 @@ export function CollectionCanvas({
         void handlePasteClipboard();
         return;
       }
-      if (e.shiftKey && !e.metaKey && !e.ctrlKey && selectedObj) {
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && (selectedObj || selectedItem)) {
         // Figma's own flip shortcuts — single-selection only, matching
         // the rich toolbar's flip buttons (a multi-selection flip would
         // need to flip the whole group's layout, not just each object
         // in place, which is a bigger feature left for later).
         if (e.key.toLowerCase() === "h") {
           e.preventDefault();
-          handleFlipSelected("horizontal");
+          if (selectedItem) handleFlipItem(selectedItem.id, "horizontal");
+          else handleFlipSelected("horizontal");
           return;
         }
         if (e.key.toLowerCase() === "v") {
           e.preventDefault();
-          handleFlipSelected("vertical");
+          if (selectedItem) handleFlipItem(selectedItem.id, "vertical");
+          else handleFlipSelected("vertical");
           return;
         }
       }
@@ -1217,9 +1480,103 @@ export function CollectionCanvas({
     const { x, y } = viewportCenterCanvasCoords();
     void createObjectAt("shape", x, y, variant);
   }
-  function handleAddFrame() {
-    const { x, y } = viewportCenterCanvasCoords();
-    void createObjectAt("frame", x, y);
+  // Frame is drag-to-draw (see FRAME CREATION below) rather than
+  // one-shot placement, since a frame's whole shape comes from where you
+  // drag — matching how the connector tools already work. "Add frame"
+  // just arms the tool; onFrameCreatePointerUp does the actual creation.
+  function handleArmFrameTool() {
+    setPendingFrameTool((cur) => !cur);
+  }
+
+  // -------------------------------------------------------------------
+  // FRAME CREATION — same armed-tool, drag-to-draw pattern as CONNECTOR
+  // CREATION above (see that section's comment for the full rationale
+  // behind the dedicated full-viewport overlay). A frame's whole size
+  // comes from the drag; a plain click with no real drag falls back to
+  // the old fixed-size centered placement via defaultObjectFor, so
+  // "click the tool, then click the canvas" still produces something
+  // reasonable instead of a degenerate zero-size frame.
+  // -------------------------------------------------------------------
+
+  function onFrameCreatePointerDown(e: React.PointerEvent) {
+    if (!pendingFrameTool || e.button !== 0) return;
+    const world = screenToCanvas(e.clientX, e.clientY);
+    frameCreateDrag.current = { start: world, startClientX: e.clientX, startClientY: e.clientY };
+    setFrameCreatePreview({ x: world.x, y: world.y, w: 0, h: 0, zIndex: 0 });
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+
+  function onFrameCreatePointerMove(e: React.PointerEvent) {
+    const drag = frameCreateDrag.current;
+    if (!drag) return;
+    const world = screenToCanvas(e.clientX, e.clientY);
+    setFrameCreatePreview({
+      x: Math.min(drag.start.x, world.x),
+      y: Math.min(drag.start.y, world.y),
+      w: Math.abs(world.x - drag.start.x),
+      h: Math.abs(world.y - drag.start.y),
+      zIndex: 0,
+    });
+  }
+
+  async function onFrameCreatePointerUp(e: React.PointerEvent) {
+    const drag = frameCreateDrag.current;
+    frameCreateDrag.current = null;
+    setFrameCreatePreview(null);
+    setPendingFrameTool(false); // one-shot, like every other tool once it's used
+    if (!drag) return;
+
+    const movedEnough =
+      Math.abs(e.clientX - drag.startClientX) > CLICK_THRESHOLD ||
+      Math.abs(e.clientY - drag.startClientY) > CLICK_THRESHOLD;
+
+    const z = ++maxZ.current;
+    let worldRect: Position;
+    let baseInput: Record<string, unknown>;
+    if (movedEnough) {
+      const world = screenToCanvas(e.clientX, e.clientY);
+      const x = Math.min(drag.start.x, world.x);
+      const y = Math.min(drag.start.y, world.y);
+      const w = Math.max(Math.abs(world.x - drag.start.x), MIN_NODE_SIZE);
+      const h = Math.max(Math.abs(world.y - drag.start.y), MIN_NODE_SIZE);
+      worldRect = { x, y, w, h, zIndex: -1000 - z };
+      baseInput = { type: "frame" as const, text: "Frame", x, y, w, h, zIndex: -1000 - z, clipContent: true };
+    } else {
+      // Plain click, no drag — fall back to the old fixed-size centered
+      // placement so the tool still does something useful.
+      baseInput = defaultObjectFor("frame", drag.start.x, drag.start.y, z);
+      const b = baseInput as { x: number; y: number; w: number; h: number; zIndex: number };
+      worldRect = { x: b.x, y: b.y, w: b.w, h: b.h, zIndex: b.zIndex };
+    }
+
+    // A frame drawn (or placed) inside another frame's bounds becomes
+    // its child immediately, Figma/FigJam-style — same
+    // findFrameDropTarget/local-coordinate-conversion logic
+    // commitNodePosition uses when an EXISTING object is dragged into a
+    // frame, just applied at creation time instead of drag-release time.
+    const dropTarget = findFrameDropTarget(worldRect, null);
+    const input = dropTarget
+      ? {
+          ...baseInput,
+          x: worldRect.x - positions[dropTarget.id]!.x,
+          y: worldRect.y - positions[dropTarget.id]!.y,
+          parentId: dropTarget.id,
+        }
+      : baseInput;
+
+    try {
+      const created = await createObjectOnServer(input);
+      setCanvasObjectsState((prev) => [...prev, created]);
+      setPositions((prev) => ({
+        ...prev,
+        [created.id]: { x: worldRect.x, y: worldRect.y, w: created.w, h: created.h, zIndex: created.zIndex },
+      }));
+      setSelectedIds([created.id]);
+      pushUndo({ type: "object-create", obj: created });
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't add that");
+    }
   }
 
   // -------------------------------------------------------------------
@@ -1643,6 +2000,15 @@ export function CollectionCanvas({
   // -------------------------------------------------------------------
   type NodeDragState = {
     refs: NodeRef[];
+    /** Subset of refs that actually get a PATCH (and reparent-detection)
+     * on release — a frame's own descendants tagged along in `refs`
+     * purely so their DOM elements visibly track it live are NOT in
+     * here: their local offset from the frame doesn't change just
+     * because the frame moved, so there's nothing to persist for them
+     * (see finishNodeDrag). Also excludes a selected node whose OWN
+     * parent is ALSO selected in the same drag, for the same reason
+     * one level up. */
+    persistRefs: NodeRef[];
     primaryId: string;
     startX: number;
     startY: number;
@@ -1707,6 +2073,18 @@ export function CollectionCanvas({
   }, []);
 
   function onNodePointerDown(e: React.PointerEvent, ref: NodeRef) {
+    // Right-click (and middle-click) shouldn't enter the drag machinery
+    // at all — a right-click on an item used to fall through to the
+    // "plain click, no movement" branch in onNodePointerUp and open the
+    // item detail dialog, on top of the browser's native contextmenu
+    // event also firing and opening the right-click menu. Bailing out
+    // here (same e.button guard onBackgroundPointerDown already uses)
+    // leaves right-click to do ONLY its own thing: the onContextMenu
+    // handler below still selects the node, and ContextMenuTrigger's
+    // native listener still opens the menu — a left-click is the only
+    // thing that can ever open the detail dialog or start a drag.
+    if (e.button !== 0) return;
+
     // While actively editing this object's text, let clicks/drags behave
     // natively (caret placement, text selection) instead of moving it.
     if (ref.kind === "object" && editingIdRef.current === ref.id) return;
@@ -1731,23 +2109,33 @@ export function CollectionCanvas({
     e.stopPropagation();
 
     const isGroupMember = selectedIds.length > 1 && selectedIds.includes(ref.id);
-    let refs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
+    let selectedRefs = isGroupMember ? selectedIds.map(nodeRefById) : [ref];
     // A locked object caught up in a multi-selection doesn't get dragged
     // along even when the drag starts from an unlocked sibling.
-    refs = refs.filter((r) => r.kind !== "object" || !canvasObjectsState.find((o) => o.id === r.id)?.locked);
-    if (refs.length === 0) return;
+    selectedRefs = selectedRefs.filter(
+      (r) => r.kind !== "object" || !canvasObjectsState.find((o) => o.id === r.id)?.locked,
+    );
+    if (selectedRefs.length === 0) return;
 
-    // Dragging a frame takes whatever's currently sitting inside it
-    // along for the ride — computed fresh from current positions right
-    // here (not a persisted parent relationship), so anything dropped
-    // into the frame since is picked up automatically and nothing needs
-    // reparenting when it's dragged back out.
+    // A selected node whose OWN parent is ALSO selected in this same
+    // drag doesn't need its own PATCH — the parent moving already
+    // carries it (see finishNodeDrag), and persisting it too would
+    // double-count the delta against a parent position that hasn't
+    // committed yet.
+    const persistRefs = selectedRefs.filter(
+      (r) => !selectedRefs.some((other) => other.id !== r.id && other.id === getParentId(r.id)),
+    );
+
+    // Dragging a frame moves its whole subtree's DOM elements along for
+    // the ride visually (see getDescendantIds) — their stored positions
+    // don't need to change at all (see finishNodeDrag's persistRefs
+    // split), since they're local offsets relative to the frame already.
+    let refs = selectedRefs;
     if (!isGroupMember && ref.kind === "object") {
       const obj = canvasObjectsState.find((o) => o.id === ref.id);
-      const framePos = positions[ref.id];
-      if (obj?.type === "frame" && framePos) {
-        const contained = getFrameContainedIds(framePos, ref.id);
-        if (contained.length > 0) refs = [ref, ...contained.map(nodeRefById)];
+      if (obj?.type === "frame") {
+        const descendants = getDescendantIds(ref.id);
+        if (descendants.length > 0) refs = [ref, ...descendants.map(nodeRefById)];
       }
     }
 
@@ -1765,6 +2153,7 @@ export function CollectionCanvas({
 
     nodeDrag.current = {
       refs,
+      persistRefs,
       primaryId: ref.id,
       startX: e.clientX,
       startY: e.clientY,
@@ -1792,6 +2181,7 @@ export function CollectionCanvas({
   // once, instead of being spread across the drag.
   function finishNodeDrag(drag: NodeDragState) {
     nodeDrag.current = null;
+    setHoverFrameId(null);
     const zBase = maxZ.current;
     const updates: Record<string, Position> = {};
     drag.refs.forEach((r, i) => {
@@ -1799,19 +2189,35 @@ export function CollectionCanvas({
       updates[r.id] = { ...base, x: base.x + drag.releaseDx, y: base.y + drag.releaseDy, zIndex: zBase + i + 1 };
     });
     maxZ.current = zBase + drag.refs.length;
+    // Only persistRefs actually change position in the data model — a
+    // frame's descendants tagged along in `refs` purely for the live
+    // visual (see onNodePointerDown) need no update at all: their local
+    // offset from the frame is unchanged by the frame itself moving. An
+    // override is still set for ALL of refs though, so their world
+    // position (resolved via the frame's own override — see the
+    // `positions` memo) keeps showing correctly through to when
+    // canvasObjectsState/props eventually catch up for real.
     setPositions((prev) => ({ ...prev, ...updates }));
 
-    if (drag.refs.length > 1) {
+    if (drag.persistRefs.length > 1) {
       pushUndo({
         type: "group-position",
-        refs: drag.refs,
-        before: drag.refs.map((r) => drag.bases[r.id]),
-        after: drag.refs.map((r) => updates[r.id]),
+        refs: drag.persistRefs,
+        before: drag.persistRefs.map((r) => drag.bases[r.id]),
+        after: drag.persistRefs.map((r) => updates[r.id]),
       });
-    } else {
-      pushUndo({ type: "position", ref: drag.refs[0], before: drag.bases[drag.refs[0].id], after: updates[drag.refs[0].id] });
+    } else if (drag.persistRefs.length === 1) {
+      const r = drag.persistRefs[0];
+      pushUndo({ type: "position", ref: r, before: drag.bases[r.id], after: updates[r.id] });
     }
-    for (const r of drag.refs) persistPosition(r, updates[r.id]);
+    // commitNodePosition (not the plain persistPosition undo/resize/align
+    // use) — this is the one drag path that can actually drop something
+    // into or out of a frame; see its own comment. Reparenting isn't
+    // captured in the undo entry above (a v1 gap: undoing a drag that
+    // ALSO reparented restores the old position but not the old parent)
+    // — acceptable for now since it only affects that specific
+    // combination, not plain moves.
+    for (const r of drag.persistRefs) commitNodePosition(r, updates[r.id]);
   }
 
   // Runs at most once per animation frame while a node drag (or its
@@ -1871,6 +2277,20 @@ export function CollectionCanvas({
       const el = nodeElRefs.current[r.id];
       if (base && el) {
         el.style.transform = nodeTransform(base.x + dx, base.y + dy, drag.currentTilt, drag.transformSuffixes[r.id]);
+      }
+    }
+
+    // Live "drop into this frame" highlight — only while actually
+    // dragging (not the release-settle tail, where the position's
+    // already frozen) and only for the primary node, matching what
+    // commitNodePosition will actually check on release.
+    if (!drag.releasing) {
+      const primaryBase = drag.bases[drag.primaryId];
+      if (primaryBase) {
+        const primaryWorld = { ...primaryBase, x: primaryBase.x + dx, y: primaryBase.y + dy };
+        const excludeId = kindById.get(drag.primaryId) === "object" ? drag.primaryId : null;
+        const candidate = findFrameDropTarget(primaryWorld, excludeId);
+        setHoverFrameId((cur) => (cur === (candidate?.id ?? null) ? cur : candidate?.id ?? null));
       }
     }
 
@@ -2229,6 +2649,26 @@ export function CollectionCanvas({
     );
   }
 
+  /** Flip horizontal/vertical for a library item — the item equivalent
+   * of handleFlipSelected above. Items have no locked concept and no
+   * connector-style geometry, so this is simpler: just toggle the
+   * flipX/flipY that live on itemMeta (mirrored from item_collections)
+   * and persist alongside the item's current position, since
+   * setItemPositionSchema always requires the full x/y/w/h/zIndex on
+   * every PATCH, not just the changed field. */
+  function handleFlipItem(id: string, axis: "horizontal" | "vertical") {
+    const pos = positions[id];
+    if (!pos) return;
+    const current = itemMeta[id] ?? { parentId: null, flipX: false, flipY: false };
+    const patch = axis === "horizontal" ? { flipX: !current.flipX } : { flipY: !current.flipY };
+    setItemMeta((prev) => ({ ...prev, [id]: { ...current, ...patch } }));
+    void localFetch(`/api/collections/${collectionSlug}/items/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...worldToStoredPosition(id, pos), ...patch }),
+    });
+  }
+
   function handleObjectStyleChange(id: string, patch: CanvasObjectPatch) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
@@ -2435,6 +2875,7 @@ export function CollectionCanvas({
   function handleDeleteObject(id: string) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
+    if (obj.type === "frame") unwrapFrameChildren(id);
     const pos = positions[id];
     pushUndo({ type: "object-delete", obj: pos ? { ...obj, ...pos } : obj });
     setCanvasObjectsState((prev) => prev.filter((o) => o.id !== id));
@@ -2603,6 +3044,10 @@ export function CollectionCanvas({
   const selectedObj =
     selectedIds.length === 1 ? canvasObjectsState.find((o) => o.id === selectedIds[0]) ?? null : null;
   const selectedObjPos = selectedObj ? positions[selectedObj.id] : null;
+  // Single-selected library item — the item equivalent of selectedObj,
+  // used to offer Flip on items too (see handleFlipItem).
+  const selectedItem =
+    selectedIds.length === 1 ? items.find((i) => i.id === selectedIds[0]) ?? null : null;
 
   const selectionBounds = useMemo(() => {
     if (selectedIds.length < 2) return null;
@@ -2663,12 +3108,14 @@ export function CollectionCanvas({
             setSelectedIds([]);
             setEditingId(null);
             setPendingConnectorTool(null);
+            setPendingFrameTool(false);
           }}
           onAddImage={() => fileInputRef.current?.click()}
           onAddSticky={handleAddSticky}
           onAddText={handleAddText}
           onAddShape={handleAddShape}
-          onAddFrame={handleAddFrame}
+          onArmFrameTool={handleArmFrameTool}
+          pendingFrameTool={pendingFrameTool}
           pendingConnectorTool={pendingConnectorTool}
           onArmConnectorTool={(id) => setPendingConnectorTool((cur) => (cur === id ? null : id))}
           onUndo={() => void undo()}
@@ -2806,6 +3253,17 @@ export function CollectionCanvas({
         />
       )}
 
+      {/* Frame-tool overlay — same rationale as the connector overlay
+          above. */}
+      {pendingFrameTool && (
+        <div
+          className="absolute inset-0 z-10 cursor-crosshair"
+          onPointerDown={onFrameCreatePointerDown}
+          onPointerMove={onFrameCreatePointerMove}
+          onPointerUp={(e) => void onFrameCreatePointerUp(e)}
+        />
+      )}
+
       <div
         ref={viewportRef}
         className={cn(
@@ -2868,7 +3326,8 @@ export function CollectionCanvas({
                   // see nodeTransform's comment for why tilt isn't on the
                   // standalone `rotate` property. At rest (not being
                   // dragged) tilt is always 0.
-                  transform: nodeTransform(pos.x, pos.y, 0),
+                  transform: nodeTransform(pos.x, pos.y, 0, itemFlipTransform(itemMeta[item.id])),
+                  clipPath: clipPathForChild(item.id, pos),
                 }}
               >
                 <CanvasItemBody item={item} />
@@ -2900,6 +3359,10 @@ export function CollectionCanvas({
                   "absolute touch-none select-none",
                   obj.locked ? "cursor-default opacity-60" : obj.type === "frame" ? "cursor-default" : "cursor-pointer",
                   selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
+                  // Live "drop into this frame" highlight — a distinct
+                  // color from the plain selection ring above so the two
+                  // never get confused for one another.
+                  obj.type === "frame" && hoverFrameId === obj.id && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 )}
                 style={{
                   left: 0,
@@ -2921,6 +3384,7 @@ export function CollectionCanvas({
                   // arrow's flip direction silently depending on whatever
                   // angle it's rotated to.
                   transform: nodeTransform(pos.x, pos.y, 0, canvasObjectTransform(obj)),
+                  clipPath: obj.type === "frame" ? undefined : clipPathForChild(obj.id, pos),
                 }}
               >
                 <CanvasObjectBody
@@ -2969,6 +3433,24 @@ export function CollectionCanvas({
               </div>
             );
           })}
+
+          {/* Live drag-to-create preview for the frame tool — a plain
+              dashed rect, not a real object until the pointer is
+              released (same "not backed by anything stored yet" idea as
+              the connector preview above). */}
+          {frameCreatePreview && (
+            <div
+              className="pointer-events-none absolute rounded-lg border-2 border-dashed border-primary bg-primary/5"
+              style={{
+                left: 0,
+                top: 0,
+                width: frameCreatePreview.w,
+                height: frameCreatePreview.h,
+                zIndex: 999999,
+                transform: nodeTransform(frameCreatePreview.x, frameCreatePreview.y, 0),
+              }}
+            />
+          )}
 
           {/* Connectors — a shared vector layer, always on top of every
               other object (drawn last), since each one is a real SVG
@@ -3296,15 +3778,23 @@ export function CollectionCanvas({
             Send to back
             <ContextMenuShortcut>[</ContextMenuShortcut>
           </ContextMenuItem>
-          {selectedObj && !selectedObj.locked && (
+          {((selectedObj && !selectedObj.locked) || selectedItem) && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => handleFlipSelected("horizontal")}>
+              <ContextMenuItem
+                onClick={() =>
+                  selectedItem ? handleFlipItem(selectedItem.id, "horizontal") : handleFlipSelected("horizontal")
+                }
+              >
                 <FlipHorizontal className="size-4" />
                 Flip horizontal
                 <ContextMenuShortcut>⇧H</ContextMenuShortcut>
               </ContextMenuItem>
-              <ContextMenuItem onClick={() => handleFlipSelected("vertical")}>
+              <ContextMenuItem
+                onClick={() =>
+                  selectedItem ? handleFlipItem(selectedItem.id, "vertical") : handleFlipSelected("vertical")
+                }
+              >
                 <FlipVertical className="size-4" />
                 Flip vertical
                 <ContextMenuShortcut>⇧V</ContextMenuShortcut>

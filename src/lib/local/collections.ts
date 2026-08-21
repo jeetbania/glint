@@ -171,6 +171,9 @@ export async function setItemCollections(itemId: string, names: string[]): Promi
           w: null,
           h: null,
           zIndex: 0,
+          parentId: null,
+          flipX: false,
+          flipY: false,
           createdAt: ts,
         }),
       ),
@@ -184,15 +187,35 @@ export async function getCollectionBySlug(slug: string): Promise<LocalCollection
   return (await db.getFromIndex("collections", "slug", slug)) ?? null;
 }
 
+export type ItemCanvasMetaRow = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  zIndex: number;
+  parentId: string | null;
+  flipX: boolean;
+  flipY: boolean;
+};
+
 export async function getItemPositionsForCollection(
   collectionId: string,
-): Promise<Record<string, { x: number; y: number; w: number; h: number; zIndex: number }>> {
+): Promise<Record<string, ItemCanvasMetaRow>> {
   const db = await getLocalDb();
   const rows = await db.getAllFromIndex("itemCollections", "collectionId", collectionId);
-  const out: Record<string, { x: number; y: number; w: number; h: number; zIndex: number }> = {};
+  const out: Record<string, ItemCanvasMetaRow> = {};
   for (const row of rows) {
     if (row.x == null || row.y == null || row.w == null || row.h == null) continue;
-    out[row.itemId] = { x: row.x, y: row.y, w: row.w, h: row.h, zIndex: row.zIndex };
+    out[row.itemId] = {
+      x: row.x,
+      y: row.y,
+      w: row.w,
+      h: row.h,
+      zIndex: row.zIndex,
+      parentId: row.parentId ?? null,
+      flipX: row.flipX ?? false,
+      flipY: row.flipY ?? false,
+    };
   }
   return out;
 }
@@ -200,7 +223,7 @@ export async function getItemPositionsForCollection(
 export async function setItemPositionInCollection(
   collectionId: string,
   itemId: string,
-  position: { x: number; y: number; w: number; h: number; zIndex: number },
+  position: { x: number; y: number; w: number; h: number; zIndex: number; parentId?: string | null; flipX?: boolean; flipY?: boolean },
 ): Promise<void> {
   const db = await getLocalDb();
   const id = `${itemId}:${collectionId}`;
@@ -211,6 +234,15 @@ export async function setItemPositionInCollection(
     // Shouldn't normally happen (a position is only ever set for an
     // existing membership), but create the link rather than silently
     // dropping the write if it does.
-    await db.put("itemCollections", { id, itemId, collectionId, ...position, createdAt: nowIso() });
+    await db.put("itemCollections", {
+      id,
+      itemId,
+      collectionId,
+      parentId: null,
+      flipX: false,
+      flipY: false,
+      ...position,
+      createdAt: nowIso(),
+    });
   }
 }

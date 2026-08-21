@@ -12,7 +12,10 @@ import type { ApiCanvasObject } from "@/types/canvas-object";
 type CollectionDetail = {
   collection: { id: string; name: string; slug: string };
   items: ApiItem[];
-  positions: Record<string, { x: number; y: number; w: number; h: number; zIndex: number }>;
+  positions: Record<
+    string,
+    { x: number; y: number; w: number; h: number; zIndex: number; parentId: string | null; flipX: boolean; flipY: boolean }
+  >;
   canvasObjects: ApiCanvasObject[];
 };
 

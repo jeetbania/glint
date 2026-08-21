@@ -42,6 +42,11 @@ export type LocalItemCollectionRow = {
   w: number | null;
   h: number | null;
   zIndex: number;
+  // When set, x/y above are LOCAL to that frame — see the matching
+  // comment on db/schema.ts's canvasObjects.parentId.
+  parentId: string | null;
+  flipX: boolean;
+  flipY: boolean;
   createdAt: string;
 };
 
@@ -77,6 +82,11 @@ export type LocalCanvasObjectRow = {
   endBinding: { objectId: string; anchor: string } | null;
   // any object type.
   locked: boolean;
+  // Any object type — see the CANVAS COORDINATE HIERARCHY comment on the
+  // real canvasObjects.parentId column.
+  parentId: string | null;
+  // Frame only.
+  clipContent: boolean;
   createdAt: string;
   updatedAt: string;
 };

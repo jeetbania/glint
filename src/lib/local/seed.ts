@@ -211,6 +211,9 @@ export async function seedLocalDbIfEmpty(): Promise<void> {
             w: null,
             h: null,
             zIndex: 0,
+            parentId: null,
+            flipX: false,
+            flipY: false,
             createdAt: row.createdAt,
           })
         : Promise.resolve(),

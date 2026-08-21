@@ -57,6 +57,8 @@ const DEFAULTS = {
   startBinding: null,
   endBinding: null,
   locked: false,
+  parentId: null,
+  clipContent: true,
 } as const;
 
 /** A pre-connector-system row: `type: "shape"` with shapeVariant one of
@@ -142,11 +144,19 @@ function migrateLegacyShapeToConnector(row: LocalCanvasObjectRow): LocalCanvasOb
  * a legacy shape only gets written back to IndexedDB once, not twice). */
 function normalizeRow(row: LocalCanvasObjectRow): LocalCanvasObjectRow {
   const migrated = migrateLegacyShapeToConnector(row);
-  if (migrated.strokeStyle != null && migrated.locked != null) return migrated;
+  // clipContent (a plain non-nullable boolean, unlike parentId which is
+  // legitimately nullable even once normalized) is a reliable proxy for
+  // "has this whole normalization pass already run" — added in the same
+  // pass as strokeStyle/locked/parentId, so checking it alone is enough.
+  if (migrated.strokeStyle != null && migrated.locked != null && migrated.clipContent != null) {
+    return migrated;
+  }
   return {
     ...migrated,
     strokeStyle: migrated.strokeStyle ?? (migrated.type === "connector" ? "solid" : null),
     locked: migrated.locked ?? false,
+    parentId: migrated.parentId ?? null,
+    clipContent: migrated.clipContent ?? true,
   };
 }
 
