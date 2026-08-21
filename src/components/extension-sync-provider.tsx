@@ -22,26 +22,39 @@ type ExtensionSavePayload =
     };
 
 /**
- * Mounted once in the (app) layout. Now that saved items live only in
- * this browser's IndexedDB (see lib/local/*), the extension can't just
- * POST to a server API and let the DB fan it out anymore — the actual
- * write has to happen HERE, in an already-open Glint tab, using this
- * app's own local data layer. content-script.js relays a message from
- * the background service worker into a `glint-extension-save` DOM
- * CustomEvent (a content script runs in an isolated JS world and can't
- * call this app's functions directly, but window.dispatchEvent crosses
- * that boundary fine — it's just a DOM event). If no Glint tab was open
- * when something got saved, background.js queues it and content-script.js
- * asks for the backlog the next time a tab loads, which arrives here the
- * same way.
+ * Mounted once in the (app) layout — deliberately NOT present on /login
+ * or /landingpage, even though content-script.js is injected across the
+ * whole Glint origin (its match pattern has no way to distinguish
+ * authenticated pages from the login screen). That mismatch is exactly
+ * why every `glint-extension-save` this component handles gets ack'd
+ * back with a matching id (see the `finally` block below): without it,
+ * background.js has no way to tell "delivered to a real listening app
+ * tab" apart from "delivered to a /login tab where nothing was
+ * listening," and would report a save as successful when it silently
+ * went nowhere.
+ *
+ * Now that saved items live only in this browser's IndexedDB (see
+ * lib/local/*), the extension can't just POST to a server API and let
+ * the DB fan it out anymore — the actual write has to happen HERE, in an
+ * already-open (and authenticated) Glint tab, using this app's own local
+ * data layer. content-script.js relays a message from the background
+ * service worker into a `glint-extension-save` DOM CustomEvent (a
+ * content script runs in an isolated JS world and can't call this app's
+ * functions directly, but window.dispatchEvent crosses that boundary
+ * fine — it's just a DOM event). If no Glint tab was open (or open but
+ * unauthenticated) when something got saved, background.js queues it and
+ * content-script.js asks for the backlog the next time a tab loads,
+ * which arrives here the same way.
  */
 export function ExtensionSyncProvider() {
   const { mutate } = useSWRConfig();
 
   useEffect(() => {
     async function handleSave(event: Event) {
-      const payload = (event as CustomEvent<ExtensionSavePayload>).detail;
-      if (!payload) return;
+      const detail = (event as CustomEvent<{ id: string; payload: ExtensionSavePayload }>).detail;
+      if (!detail) return;
+      const { id, payload } = detail;
+      let success = false;
 
       try {
         if (payload.kind === "link") {
@@ -88,9 +101,14 @@ export function ExtensionSyncProvider() {
         }
         toast.success("Saved from the extension", { duration: 2500 });
         void mutate((key) => typeof key === "string" && key.startsWith("/api/items"));
+        success = true;
       } catch (error) {
         console.error("[extension-sync]", error);
         toast.error("Couldn't save something the extension sent over");
+      } finally {
+        if (id) {
+          window.dispatchEvent(new CustomEvent("glint-extension-save-result", { detail: { id, success } }));
+        }
       }
     }
 

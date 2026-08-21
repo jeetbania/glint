@@ -86,23 +86,34 @@ async function queueSave(payload) {
 }
 
 // Delivers to every open Glint tab if there is one; otherwise queues for
-// the next one that opens. A tab matching the URL but whose content
-// script isn't listening yet (mid-navigation) also falls back to the
-// queue rather than losing the save.
+// the next one that opens. "Open Glint tab" per findOpenTabs() means
+// any tab under the Glint origin — that includes /login and
+// /landingpage, neither of which has a listener actually mounted (see
+// content-script.js's big comment) — so success here means a REAL ack
+// came back from the page, not just that chrome.tabs.sendMessage didn't
+// throw. Only falls back to the queue if EVERY open tab failed to
+// confirm it, never per-tab, so 2 tabs open with 1 real app tab among
+// them doesn't also queue a duplicate.
 async function deliver(payload) {
   const tabs = await findOpenTabs();
   if (tabs.length === 0) {
     await queueSave(payload);
     return;
   }
-  await Promise.all(
-    tabs.map((tab) => {
-      if (tab.id === undefined) return queueSave(payload);
-      return chrome.tabs
-        .sendMessage(tab.id, { type: "glint-extension-save", payload })
-        .catch(() => queueSave(payload));
+  const results = await Promise.all(
+    tabs.map(async (tab) => {
+      if (tab.id === undefined) return false;
+      try {
+        const ok = await chrome.tabs.sendMessage(tab.id, { type: "glint-extension-save", payload });
+        return !!ok;
+      } catch {
+        return false;
+      }
     }),
   );
+  if (!results.some(Boolean)) {
+    await queueSave(payload);
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -110,16 +121,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const { [QUEUE_KEY]: queued = [] } = await chrome.storage.local.get(QUEUE_KEY);
     if (queued.length === 0) return;
-    await chrome.storage.local.set({ [QUEUE_KEY]: [] });
     const tabId = sender.tab?.id;
     if (tabId === undefined) return;
+    // Deliberately do NOT clear the queue up front — the tab asking to
+    // drain it might itself be sitting on /login or /landingpage (the
+    // content script is injected across the whole origin; see its
+    // comment), which would ack nothing and, if the queue were cleared
+    // optimistically first, silently lose every pending item for good.
+    // Only items that get a real ack are dropped; everything else stays
+    // queued for the next attempt.
+    const stillQueued = [];
     for (const payload of queued) {
       const restored =
         payload.kind === "image" ? { ...payload, bytes: base64ToBuffer(payload.bytes) } : payload;
-      chrome.tabs.sendMessage(tabId, { type: "glint-extension-save", payload: restored }).catch(() => {
-        void queueSave(payload);
-      });
+      try {
+        const ok = await chrome.tabs.sendMessage(tabId, { type: "glint-extension-save", payload: restored });
+        if (!ok) stillQueued.push(payload);
+      } catch {
+        stillQueued.push(payload);
+      }
     }
+    await chrome.storage.local.set({ [QUEUE_KEY]: stillQueued });
   })();
   sendResponse?.(true);
   return true;

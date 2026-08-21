@@ -1,0 +1,55 @@
+name: Release desktop app
+
+# The Electron app (electron/) is a thin shell that just loads the
+# hosted Vercel deployment (see electron/main.js) — it doesn't bundle a
+# Next.js build, so this workflow only ever needs to package that shell,
+# never build/deploy the web app itself (Vercel's own git integration
+# already does that on every push to main).
+#
+# Building the Windows .exe needs wine when done from a non-Windows
+# host, which isn't available in every dev environment this repo gets
+# worked on from — hence doing it here, on real macOS/Windows runners,
+# rather than relying on a local cross-build.
+#
+# Triggers on any "vX.Y.Z" tag push. To cut a release: bump the
+# "version" field in package.json, commit, then
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+# electron-builder reads that same package.json version and publishes
+# to the matching GitHub Release (creating it if it doesn't exist yet),
+# with the artifact names the landing page's /releases/latest/download/
+# links already expect (Glint-mac.dmg, Glint-Setup.exe — see
+# package.json's build.mac/win.artifactName).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac
+          - os: windows-latest
+            args: --win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Build and publish
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
