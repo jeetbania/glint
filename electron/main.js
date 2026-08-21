@@ -11,6 +11,11 @@ const crypto = require("node:crypto");
 
 const PROD_URL = "https://glint-jeetbania.vercel.app";
 const DEV_URL = "http://localhost:3000";
+// Lets the desktop app skip the password screen automatically — see
+// src/proxy.ts's matching check. Only ever sent on this one initial
+// load; every navigation after that relies on the session cookie the
+// server sets in response to it, not this constant being resent.
+const DESKTOP_APP_SECRET = "e4911bcd2c8094c66d8c36d5ac58ae864b25df8549aabc91";
 
 // macOS traffic-light position, centered inside the dedicated 24px
 // (1.5rem) titlebar strip reserved for them — see globals.css's
@@ -88,7 +93,8 @@ function createWindow() {
     },
   });
 
-  win.loadURL(app.isPackaged ? PROD_URL : DEV_URL);
+  const baseUrl = app.isPackaged ? PROD_URL : DEV_URL;
+  win.loadURL(`${baseUrl}/?desktop_key=${DESKTOP_APP_SECRET}`);
   return win;
 }
 
