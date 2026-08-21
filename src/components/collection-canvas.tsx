@@ -1232,6 +1232,13 @@ export function CollectionCanvas({
     setHoverBindingIfChanged(null);
     if (!drag || !drag.moved) return; // a plain click with no real drag creates nothing
 
+    // One-shot, like every other "add" tool in this toolbar — draw one
+    // connector and control returns to Select, rather than staying armed
+    // (which otherwise left the crosshair cursor up and the full-canvas
+    // creation overlay covering everything, unable to select/click
+    // anything else, until Select or Escape was pressed by hand).
+    setPendingConnectorTool(null);
+
     const preset = CONNECTOR_PRESETS[drag.toolId];
     const end = drag.latestWorld;
     const points =
@@ -2475,10 +2482,14 @@ export function CollectionCanvas({
           screen space regardless of whether it starts over empty canvas
           or on top of an existing object (which onNodePointerDown's own
           stopPropagation would otherwise swallow before it ever reached
-          a plain background handler). */}
+          a plain background handler). z-10, deliberately BELOW the tool
+          dock/toolbars (z-20+) — it only needs to sit above the plain
+          canvas content, never above the UI that lets you get out of
+          this mode, so a stuck-armed tool can never make Select/Escape
+          themselves unreachable. */}
       {pendingConnectorTool && (
         <div
-          className="absolute inset-0 z-30 cursor-crosshair"
+          className="absolute inset-0 z-10 cursor-crosshair"
           onPointerDown={onConnectorCreatePointerDown}
           onPointerMove={onConnectorCreatePointerMove}
           onPointerUp={() => void onConnectorCreatePointerUp()}
