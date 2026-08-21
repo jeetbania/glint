@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Glint",
   "description": "Save pages, links, and images straight to your Glint library.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "action": {
     "default_title": "Save this page to Glint",
     "default_icon": {
@@ -21,7 +21,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["contextMenus", "notifications", "storage"],
+  "permissions": ["contextMenus", "notifications", "storage", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
