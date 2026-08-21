@@ -14,19 +14,19 @@ import {
   Circle,
   Triangle,
   Slash,
-  ArrowUpRight,
+  ArrowRight,
+  ArrowLeftRight,
   CornerDownRight,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { CanvasShapeVariant } from "@/types/canvas-object";
+import type { CanvasShapeVariant, ConnectorToolId } from "@/types/canvas-object";
 
 const SHAPE_OPTIONS: {
   variant: CanvasShapeVariant;
@@ -38,24 +38,38 @@ const SHAPE_OPTIONS: {
   { variant: "ellipse", label: "Ellipse", icon: Circle, shortcut: "E" },
   { variant: "triangle", label: "Triangle", icon: Triangle, shortcut: "Y" },
 ];
-const LINE_OPTIONS: {
-  variant: CanvasShapeVariant;
+
+// Connector tools — unlike SHAPE_OPTIONS above, picking one of these ARMS
+// the tool (drag-to-draw on the canvas) instead of one-shot-placing
+// something; see onArmConnectorTool/pendingConnectorTool. All four create
+// the exact same underlying connector object, just with a different
+// connectorType/startDecoration/endDecoration preset (CONNECTOR_PRESETS
+// in collection-canvas.tsx) — every one of them freely editable
+// afterward from the object toolbar, so this list is really just
+// starting points, not fixed categories.
+const CONNECTOR_OPTIONS: {
+  id: ConnectorToolId;
   label: string;
   icon: typeof Slash;
   shortcut: string;
 }[] = [
-  { variant: "line", label: "Line", icon: Slash, shortcut: "L" },
-  { variant: "arrow", label: "Arrow", icon: ArrowUpRight, shortcut: "A" },
-  { variant: "elbow-arrow", label: "Elbow arrow", icon: CornerDownRight, shortcut: "B" },
+  { id: "line", label: "Line", icon: Slash, shortcut: "L" },
+  { id: "arrow", label: "Arrow", icon: ArrowRight, shortcut: "A" },
+  { id: "two-way-arrow", label: "Two-way arrow", icon: ArrowLeftRight, shortcut: "W" },
+  { id: "elbow", label: "Elbow connector", icon: CornerDownRight, shortcut: "B" },
 ];
 
-/** The FigJam-style left tool dock. Every "add" button is a one-shot
- * action — it drops the new thing centered in the current view
- * immediately (matching how "add image" already had to work, since a
- * file picker has no "click the canvas" step) rather than arming a mode
- * that then waits for a follow-up click. "Select" doesn't toggle a mode
- * either; it's just a clear-selection shortcut, kept visually "active"
- * to match the reference's always-on cursor tool. */
+/** The FigJam-style left tool dock. Every "add" button except the
+ * connector tools is a one-shot action — it drops the new thing centered
+ * in the current view immediately (matching how "add image" already had
+ * to work, since a file picker has no "click the canvas" step) rather
+ * than arming a mode that then waits for a follow-up click. The
+ * connector tools are the one deliberate exception: a connector's whole
+ * shape comes from where you drag, so picking one arms it (crosshair
+ * cursor, stays active until you draw one or hit Select/Escape) instead.
+ * "Select" doesn't toggle a mode either; it's a clear-selection/disarm
+ * shortcut, kept visually "active" to match the reference's always-on
+ * cursor tool. */
 export function CanvasToolbar({
   onSelectTool,
   onAddImage,
@@ -63,6 +77,8 @@ export function CanvasToolbar({
   onAddText,
   onAddShape,
   onAddFrame,
+  pendingConnectorTool,
+  onArmConnectorTool,
   onUndo,
   onRedo,
   canUndo,
@@ -75,6 +91,8 @@ export function CanvasToolbar({
   onAddText: () => void;
   onAddShape: (variant: CanvasShapeVariant) => void;
   onAddFrame: () => void;
+  pendingConnectorTool: ConnectorToolId | null;
+  onArmConnectorTool: (id: ConnectorToolId) => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -83,7 +101,7 @@ export function CanvasToolbar({
 }) {
   return (
     <div className="glass-pill pointer-events-auto flex flex-col items-center gap-1 p-1.5">
-      <ToolButton label="Select (clear selection)" active onClick={onSelectTool}>
+      <ToolButton label="Select (clear selection)" active={!pendingConnectorTool} onClick={onSelectTool}>
         <MousePointer2 className="size-4" />
       </ToolButton>
 
@@ -115,9 +133,25 @@ export function CanvasToolbar({
               <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>
             </DropdownMenuItem>
           ))}
-          <DropdownMenuSeparator />
-          {LINE_OPTIONS.map(({ variant, label, icon: Icon, shortcut }) => (
-            <DropdownMenuItem key={variant} onClick={() => onAddShape(variant)}>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Connector tools"
+          title="Line / arrow / connector"
+          className={cn(
+            "flex size-8 items-center justify-center rounded-full transition-colors",
+            pendingConnectorTool
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-foreground/6 hover:text-foreground data-popup-open:bg-foreground/6 data-popup-open:text-foreground",
+          )}
+        >
+          <ArrowRight className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="right" align="start" className="w-48">
+          {CONNECTOR_OPTIONS.map(({ id, label, icon: Icon, shortcut }) => (
+            <DropdownMenuItem key={id} onClick={() => onArmConnectorTool(id)}>
               <Icon className="size-4" />
               {label}
               <DropdownMenuShortcut>{shortcut}</DropdownMenuShortcut>

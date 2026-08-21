@@ -48,7 +48,7 @@ export type LocalItemCollectionRow = {
 export type LocalCanvasObjectRow = {
   id: string;
   collectionId: string;
-  type: "sticky" | "text" | "shape" | "frame";
+  type: "sticky" | "text" | "shape" | "frame" | "connector";
   text: string | null;
   shapeVariant: string | null;
   x: number;
@@ -66,6 +66,14 @@ export type LocalCanvasObjectRow = {
   bold: boolean;
   italic: boolean;
   align: string;
+  // connector-only — see the matching comment on the real `canvas_objects`
+  // table in db/schema.ts.
+  points: { x: number; y: number }[] | null;
+  connectorType: string | null;
+  startDecoration: string | null;
+  endDecoration: string | null;
+  startBinding: { objectId: string; anchor: string } | null;
+  endBinding: { objectId: string; anchor: string } | null;
   createdAt: string;
   updatedAt: string;
 };

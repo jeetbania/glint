@@ -213,9 +213,15 @@ export const itemCollections = pgTable(
   ],
 );
 
-export const canvasObjectTypeValues = ["sticky", "text", "shape", "frame"] as const;
+export const canvasObjectTypeValues = ["sticky", "text", "shape", "frame", "connector"] as const;
 export type CanvasObjectType = (typeof canvasObjectTypeValues)[number];
 
+// "line"/"arrow"/"elbow-arrow" used to be shapeVariant values — a
+// connector rendered as a rectangle-shaped object with an arrow drawn
+// inside its box. They're kept here ONLY so old stored rows (and the
+// lib/local/canvas-objects.ts migration that reads them) still type-check;
+// a connector is now its own object `type` (below) with its own geometry,
+// never created as one of these anymore.
 export const canvasShapeVariantValues = [
   "rectangle",
   "ellipse",
@@ -225,6 +231,24 @@ export const canvasShapeVariantValues = [
   "elbow-arrow",
 ] as const;
 export type CanvasShapeVariant = (typeof canvasShapeVariantValues)[number];
+
+// A connector's own routing style. "straight" is a direct two-point
+// line/arrow; "elbow" is an axis-aligned, right-angled route.
+export const canvasConnectorTypeValues = ["straight", "elbow"] as const;
+export type CanvasConnectorType = (typeof canvasConnectorTypeValues)[number];
+
+export const canvasConnectorDecorationValues = ["none", "arrow"] as const;
+export type CanvasConnectorDecoration = (typeof canvasConnectorDecorationValues)[number];
+
+export const canvasConnectorAnchorValues = ["top", "right", "bottom", "left", "center"] as const;
+export type CanvasConnectorAnchor = (typeof canvasConnectorAnchorValues)[number];
+
+/** Where a connector's start/end is attached to another object, if at
+ * all — resolved back to a live world-space point at render time from
+ * that object's CURRENT position (see resolveConnectorPoints in
+ * collection-canvas.tsx), so the connector stays attached as the target
+ * moves rather than needing any special-case sync code when it does. */
+export type CanvasConnectorBinding = { objectId: string; anchor: CanvasConnectorAnchor };
 
 export const canvasFontFamilyValues = ["sans", "serif", "mono"] as const;
 export type CanvasFontFamily = (typeof canvasFontFamilyValues)[number];
@@ -252,11 +276,18 @@ export const canvasObjects = pgTable(
       .references(() => collections.id, { onDelete: "cascade" }),
     type: text("type", { enum: canvasObjectTypeValues }).notNull(),
 
-    // sticky/text: note body. frame: its label. shape: unused.
+    // sticky/text: note body. frame: its label. shape/connector: unused.
     text: text("text"),
     // shape only — which primitive to render.
     shapeVariant: text("shape_variant", { enum: canvasShapeVariantValues }),
 
+    // x/y/w/h/zIndex below are still the source of truth for
+    // sticky/text/shape/frame, but for a connector they're a DERIVED
+    // bounding box (recomputed from `points` — see boundsForConnector in
+    // lib/local/canvas-objects.ts) kept in sync purely so the rest of the
+    // app's generic per-node infrastructure (the positions map, z-order,
+    // marquee/frame-containment hit-testing, undo) keeps working
+    // unchanged. `points` is the real geometry.
     x: real("x").notNull().default(0),
     y: real("y").notNull().default(0),
     w: real("w").notNull().default(220),
@@ -265,6 +296,23 @@ export const canvasObjects = pgTable(
     flipX: boolean("flip_x").notNull().default(false),
     flipY: boolean("flip_y").notNull().default(false),
     zIndex: integer("z_index").notNull().default(0),
+
+    // --- connector-only fields ---
+    // World-space (canvas-coordinate) points: [start, ...bend points,
+    // end]. A "straight" connector always has exactly 2; an "elbow"
+    // connector always has exactly 3 (start, one auto/manually-routed
+    // corner, end) — see the ELBOW ROUTING comment in
+    // collection-canvas.tsx for why a single bend is v1's scope. This is
+    // the actual source of truth for a connector's shape; x/y/w/h above
+    // are only ever a cache derived from this.
+    points: jsonb("points").$type<{ x: number; y: number }[]>(),
+    connectorType: text("connector_type", { enum: canvasConnectorTypeValues }),
+    startDecoration: text("start_decoration", { enum: canvasConnectorDecorationValues }),
+    endDecoration: text("end_decoration", { enum: canvasConnectorDecorationValues }),
+    // Null when that end isn't attached to another object — see
+    // CanvasConnectorBinding above.
+    startBinding: jsonb("start_binding").$type<CanvasConnectorBinding | null>(),
+    endBinding: jsonb("end_binding").$type<CanvasConnectorBinding | null>(),
 
     // sticky/shape/frame background fill; null on plain text (no box).
     fill: text("fill"),

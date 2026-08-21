@@ -18,7 +18,17 @@ import { CanvasExportDialog, type ExportBackground } from "@/components/canvas-e
 import { extractImageColors } from "@/lib/color-extraction-client";
 import { cn } from "@/lib/utils";
 import type { ApiItem, ItemType } from "@/types/item";
-import type { ApiCanvasObject, CanvasObjectType, CanvasShapeVariant } from "@/types/canvas-object";
+import type {
+  ApiCanvasObject,
+  CanvasObjectType,
+  CanvasShapeVariant,
+  CanvasConnectorType,
+  CanvasConnectorDecoration,
+  CanvasConnectorAnchor,
+  CanvasConnectorBinding,
+  ConnectorToolId,
+} from "@/types/canvas-object";
+import { boundsForConnectorPoints } from "@/lib/local/canvas-objects";
 import { localFetch } from "@/lib/local/api";
 import { useResolvedImageSrc, putBlob, localBlobRef } from "@/lib/local/blobs";
 import { enrichSavedImage } from "@/lib/auto-enrich-image";
@@ -47,6 +57,172 @@ const DRAG_TILT_SPRING = 0.35; // per-frame approach factor: how fast the render
 const DRAG_TILT_DEAD_ZONE = 0.5; // px (per ~16ms) below which movement is treated as zero — ignores tiny pointer jitter while "holding still"
 const DRAG_TILT_SETTLE_EPSILON = 0.05; // deg — once |currentTilt| drops below this after release, the drag is considered settled
 
+// ---------------------------------------------------------------------
+// Connectors — Figma/FigJam-style lines/arrows/elbow connectors. Unlike
+// every other canvas object, a connector's real geometry is its own
+// `points` array (world/canvas-space: [start, ...bend point(s), end]) —
+// x/y/w/h are only ever a bounding-box CACHE derived from that array
+// (boundsForConnectorPoints, lib/local/canvas-objects.ts), kept in sync
+// purely so the rest of the app's generic per-node machinery (the
+// positions map, z-order, marquee/frame-containment hit-testing, undo)
+// keeps working unchanged for connectors too, without needing to know
+// anything about connector geometry specifically.
+//
+// v1 scope note: the elbow router here always produces a single bend (3
+// points, 2 segments) — the minimal route for a straight drag-to-create,
+// and what "avoid unnecessary segments" trivially means at this scope.
+// Genuine obstacle-avoiding multi-bend routing (routing AROUND other
+// objects sitting between the two endpoints) is real pathfinding and is
+// intentionally out of scope here; a user can still get any route they
+// want by dragging the mid-segment handles by hand.
+// ---------------------------------------------------------------------
+
+type ConnectorPreset = {
+  connectorType: CanvasConnectorType;
+  startDecoration: CanvasConnectorDecoration;
+  endDecoration: CanvasConnectorDecoration;
+};
+const CONNECTOR_PRESETS: Record<ConnectorToolId, ConnectorPreset> = {
+  line: { connectorType: "straight", startDecoration: "none", endDecoration: "none" },
+  arrow: { connectorType: "straight", startDecoration: "none", endDecoration: "arrow" },
+  "two-way-arrow": { connectorType: "straight", startDecoration: "arrow", endDecoration: "arrow" },
+  elbow: { connectorType: "elbow", startDecoration: "none", endDecoration: "arrow" },
+};
+
+const CONNECTOR_STROKE_WIDTH = 2.5; // visible px, constant at any zoom (vector-effect="non-scaling-stroke")
+const CONNECTOR_HIT_STROKE_WIDTH = 16; // invisible click/drag target — much easier to grab than the 2.5px visible line
+const CONNECTOR_ARROWHEAD_SIZE = 9; // marker units — see the <marker> defs in ConnectorLayer
+const CONNECTOR_SNAP_RADIUS_SCREEN_PX = 26; // how close an endpoint must get to a candidate anchor, in SCREEN px, to snap/bind
+const CONNECTOR_ANCHORS: CanvasConnectorAnchor[] = ["top", "right", "bottom", "left", "center"];
+
+/** The five points a connector endpoint can snap/bind to on another
+ * object, in world (canvas) coordinates, derived from that object's
+ * CURRENT position/size — never stored, always computed fresh. */
+function connectorAnchorPoint(pos: Position, anchor: CanvasConnectorAnchor): { x: number; y: number } {
+  const cx = pos.x + pos.w / 2;
+  const cy = pos.y + pos.h / 2;
+  switch (anchor) {
+    case "top":
+      return { x: cx, y: pos.y };
+    case "bottom":
+      return { x: cx, y: pos.y + pos.h };
+    case "left":
+      return { x: pos.x, y: cy };
+    case "right":
+      return { x: pos.x + pos.w, y: cy };
+    case "center":
+      return { x: cx, y: cy };
+  }
+}
+
+type BindingCandidate = { objectId: string; anchor: CanvasConnectorAnchor; point: { x: number; y: number } };
+
+/** Nearest bindable anchor (across every eligible object) to a world
+ * point, or null if nothing is within snapRadius. */
+function findBindingCandidate(
+  worldPt: { x: number; y: number },
+  eligible: { id: string; pos: Position }[],
+  snapRadius: number,
+): BindingCandidate | null {
+  let best: (BindingCandidate & { dist: number }) | null = null;
+  for (const { id, pos } of eligible) {
+    for (const anchor of CONNECTOR_ANCHORS) {
+      const point = connectorAnchorPoint(pos, anchor);
+      const dist = Math.hypot(point.x - worldPt.x, point.y - worldPt.y);
+      if (dist <= snapRadius && (!best || dist < best.dist)) {
+        best = { objectId: id, anchor, point, dist };
+      }
+    }
+  }
+  return best;
+}
+
+/** A connector's REAL, live-rendered points: the stored `points` array,
+ * except an end with a binding is resolved fresh from the bound object's
+ * CURRENT position every time this runs. This alone is the entire
+ * mechanism that keeps a connector attached as its target moves — no
+ * special sync code needed anywhere a bound object's position can
+ * change (drag, resize, undo/redo — all of it flows through the same
+ * `positions` map this reads). */
+function resolveConnectorPoints(
+  obj: ApiCanvasObject,
+  positions: Record<string, Position>,
+): { x: number; y: number }[] {
+  const points = obj.points ?? [];
+  if (points.length === 0) return points;
+  const resolved = points.map((p) => ({ ...p }));
+  let endpointMoved = false;
+  if (obj.startBinding) {
+    const pos = positions[obj.startBinding.objectId];
+    if (pos) {
+      resolved[0] = connectorAnchorPoint(pos, obj.startBinding.anchor);
+      endpointMoved = true;
+    }
+  }
+  if (obj.endBinding) {
+    const pos = positions[obj.endBinding.objectId];
+    if (pos) {
+      resolved[resolved.length - 1] = connectorAnchorPoint(pos, obj.endBinding.anchor);
+      endpointMoved = true;
+    }
+  }
+  // An elbow whose bound target moved (rather than being dragged by its
+  // own handle, which already re-routes live — see processConnectorFrame)
+  // still needs its corner re-derived here, or it'd stay stuck at its old
+  // position and the connector would render as a diagonal kink instead of
+  // a clean right angle. Orientation is taken from the STORED points (not
+  // the just-resolved ones) so it stays stable across renders.
+  if (endpointMoved && resolved.length === 3) {
+    return rerouteElbow(resolved[0], resolved[2], elbowOrientation(points));
+  }
+  return resolved;
+}
+
+/** Whether a 3-point elbow's bend currently runs horizontal-then-vertical
+ * (the corner shares its Y with start) or vertical-then-horizontal (the
+ * corner shares its X with start) — inferred from the points themselves
+ * rather than stored separately, so there's nothing extra to keep in
+ * sync when a segment gets dragged. */
+function elbowOrientation(points: { x: number; y: number }[]): "h-first" | "v-first" {
+  const [start, corner] = points;
+  return Math.abs(corner.y - start.y) <= Math.abs(corner.x - start.x) ? "h-first" : "v-first";
+}
+
+/** Re-derives a 3-point elbow's corner from a new start/end, preserving
+ * whichever orientation it already had — this is what "the path
+ * automatically recalculates when either endpoint moves" means for the
+ * single-bend model here. */
+function rerouteElbow(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  orientation: "h-first" | "v-first",
+): { x: number; y: number }[] {
+  const corner = orientation === "h-first" ? { x: end.x, y: start.y } : { x: start.x, y: end.y };
+  return [start, corner, end];
+}
+
+/** A fresh elbow's initial route, for drag-to-create — picks whichever
+ * orientation matches the drag's dominant axis, so a wide drag reads as
+ * horizontal-then-vertical and a tall one reads as
+ * vertical-then-horizontal. */
+function initialElbowRoute(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+): { x: number; y: number }[] {
+  const orientation = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y) ? "h-first" : "v-first";
+  return rerouteElbow(start, end, orientation);
+}
+
+/** SVG path `d` for a connector's points, in plain WORLD (canvas-space)
+ * coordinates — ConnectorLayer's <svg> has no viewBox of its own (1 SVG
+ * user unit = 1 CSS px), so it inherits the SAME pan/zoom transform as
+ * every other object in the same wrapper for free, with zero extra
+ * per-connector coordinate math and (critically) no non-uniform scaling
+ * of the kind that stretched the old shape-based arrows this replaces. */
+function connectorPathD(points: { x: number; y: number }[]): string {
+  return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+}
+
 type UndoEntry =
   | { type: "position"; ref: NodeRef; before: Position; after: Position }
   | { type: "group-position"; refs: NodeRef[]; before: Position[]; after: Position[] }
@@ -56,13 +232,19 @@ type UndoEntry =
   | { type: "group-delete"; objs: ApiCanvasObject[] }
   | { type: "object-update"; id: string; before: CanvasObjectPatch; after: CanvasObjectPatch };
 
+// One-shot shapes (dropped centered in the view immediately).
 const SHAPE_SHORTCUT_KEYS: Record<string, CanvasShapeVariant> = {
   r: "rectangle",
   e: "ellipse",
   y: "triangle",
+};
+// Connector tools (ARM the tool — drag-to-draw on the canvas — rather
+// than one-shot placing something; see the CONNECTOR CREATION section).
+const CONNECTOR_SHORTCUT_KEYS: Record<string, ConnectorToolId> = {
   l: "line",
   a: "arrow",
-  b: "elbow-arrow",
+  w: "two-way-arrow",
+  b: "elbow",
 };
 
 /** Auto-arranges any item with no saved position into a simple grid, so a
@@ -144,9 +326,13 @@ function rectsIntersect(
 }
 
 /** Default shape/geometry for each newly-placed canvas object, keyed off
- * the click point so it lands centered on the cursor. */
+ * the click point so it lands centered on the cursor. Connectors are
+ * NOT created through here — they have no sensible "centered default
+ * size" (their whole shape comes from where the user drags), so they go
+ * through their own createConnectorAt path instead; see the CONNECTOR
+ * CREATION section below. */
 function defaultObjectFor(
-  type: CanvasObjectType,
+  type: Exclude<CanvasObjectType, "connector">,
   cx: number,
   cy: number,
   zIndex: number,
@@ -182,24 +368,11 @@ function defaultObjectFor(
         fontSize: 20,
         align: "left" as const,
       };
-    case "shape": {
-      const isStroke = shapeVariant === "line" || shapeVariant === "arrow" || shapeVariant === "elbow-arrow";
-      // Straight line/arrow default to a thin horizontal strip (not a
-      // corner-to-corner diagonal) — rotate the handle afterward to
-      // angle it. Elbow-arrow keeps a real box since its bend needs
-      // both dimensions to read at all.
-      if (shapeVariant === "line" || shapeVariant === "arrow") {
-        return {
-          type,
-          x: cx - 100,
-          y: cy - 2,
-          w: 200,
-          h: 4,
-          zIndex,
-          fill: "#3B5BDB",
-          shapeVariant,
-        };
-      }
+    case "shape":
+      // "line"/"arrow"/"elbow-arrow" aren't offered from the shape
+      // dropdown anymore — connectors have their own tools/creation flow
+      // (see the CONNECTOR CREATION section) — so shapeVariant here is
+      // always rectangle/ellipse/triangle in practice.
       return {
         type,
         x: cx - 80,
@@ -207,10 +380,9 @@ function defaultObjectFor(
         w: 160,
         h: 160,
         zIndex,
-        fill: isStroke ? "#3B5BDB" : "#BFDBFE",
+        fill: "#BFDBFE",
         shapeVariant,
       };
-    }
     case "frame":
       return {
         type,
@@ -300,7 +472,17 @@ export function CollectionCanvas({
    * bounds — recomputed on demand (not persisted), which is what lets
    * "drag the frame, its contents come along" work without a parent
    * field or any explicit reparenting step. Other frames are excluded
-   * so frames never drag each other. */
+   * so frames never drag each other. Connectors are excluded too: they
+   * aren't part of the generic per-node drag machinery this sweeps
+   * along (their real geometry is `points`, not x/y — see the CONNECTOR
+   * CREATION section), so including one here would desync its cached
+   * bounding box from what's actually drawn instead of moving it. A
+   * connector BOUND to something inside the frame still follows
+   * correctly regardless, via resolveConnectorPoints re-resolving
+   * against that target's new (frame-dragged) position on every render —
+   * only a geometrically-overlapping-but-unbound connector doesn't get
+   * swept along, which is a reasonable v1 gap given it wasn't going to
+   * move correctly through this path anyway. */
   function getFrameContainedIds(framePos: Position, frameId: string): string[] {
     const ids: string[] = [];
     for (const it of items) {
@@ -308,7 +490,7 @@ export function CollectionCanvas({
       if (p && isCenterInside(p, framePos)) ids.push(it.id);
     }
     for (const o of canvasObjectsState) {
-      if (o.id === frameId || o.type === "frame") continue;
+      if (o.id === frameId || o.type === "frame" || o.type === "connector") continue;
       const p = positions[o.id];
       if (p && isCenterInside(p, framePos)) ids.push(o.id);
     }
@@ -363,6 +545,21 @@ export function CollectionCanvas({
     [zoomAt],
   );
 
+  /** Screen (clientX/Y) -> canvas/world coordinates — every connector
+   * geometry edit (creation-drag, endpoint drag, segment drag) MUST go
+   * through this rather than using raw pointer deltas directly, so
+   * dragging behaves identically at any zoom/pan (same formula zoomAt
+   * above uses for its own screen<->world conversion). */
+  function screenToCanvas(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const px = clientX - (rect?.left ?? 0);
+    const py = clientY - (rect?.top ?? 0);
+    return {
+      x: (px - panRef.current.x) / zoomRef.current,
+      y: (py - panRef.current.y) / zoomRef.current,
+    };
+  }
+
   // -------------------------------------------------------------------
   // Selection + edit-mode state
   // -------------------------------------------------------------------
@@ -376,6 +573,20 @@ export function CollectionCanvas({
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | HTMLInputElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Which connector tool (if any) is armed — set by clicking one of the
+  // connector entries in CanvasToolbar (or its shortcut key), unlike
+  // every other "add" button which places its thing immediately. While
+  // armed, dragging on the canvas draws a new connector instead of
+  // marquee-selecting/panning — see the CONNECTOR CREATION section.
+  const [pendingConnectorTool, setPendingConnectorTool] = useState<ConnectorToolId | null>(null);
+  // The nearby object (if any) a connector endpoint is currently
+  // snapping to — during creation-drag or an existing endpoint-handle
+  // drag. Only changes (and re-renders) when the snapped candidate
+  // itself changes, not on every pointermove, so this stays cheap; the
+  // endpoint's own live position is still painted imperatively every
+  // frame (see connectorDrag below), same as every other canvas drag.
+  const [hoverBinding, setHoverBinding] = useState<BindingCandidate | null>(null);
 
   useEffect(() => {
     if (pendingFocusId && textareaRefs.current[pendingFocusId]) {
@@ -647,6 +858,7 @@ export function CollectionCanvas({
       if (e.key === "Escape") {
         setSelectedIds([]);
         setEditingId(null);
+        setPendingConnectorTool(null);
         return;
       }
       if (isTyping) return;
@@ -690,6 +902,12 @@ export function CollectionCanvas({
         if (variant) {
           e.preventDefault();
           handleAddShape(variant);
+          return;
+        }
+        const connectorTool = CONNECTOR_SHORTCUT_KEYS[e.key.toLowerCase()];
+        if (connectorTool) {
+          e.preventDefault();
+          setPendingConnectorTool(connectorTool);
         }
       }
     }
@@ -803,7 +1021,7 @@ export function CollectionCanvas({
   }
 
   async function createObjectAt(
-    type: CanvasObjectType,
+    type: Exclude<CanvasObjectType, "connector">,
     cx: number,
     cy: number,
     shapeVariant?: CanvasShapeVariant,
@@ -846,6 +1064,395 @@ export function CollectionCanvas({
   function handleAddFrame() {
     const { x, y } = viewportCenterCanvasCoords();
     void createObjectAt("frame", x, y);
+  }
+
+  // -------------------------------------------------------------------
+  // CONNECTOR CREATION — arm a tool (CanvasToolbar or its shortcut key),
+  // then mouse down -> drag -> mouse up on the canvas draws it, FigJam-
+  // style, instead of the one-shot "drop it centered" flow every other
+  // object uses. A dedicated full-viewport overlay (rendered only while
+  // a tool is armed — see the JSX below) captures the whole gesture in
+  // SCREEN space so it works the same whether the drag starts over empty
+  // canvas or on top of an existing object (which onNodePointerDown's
+  // own stopPropagation would otherwise swallow).
+  // -------------------------------------------------------------------
+
+  /** Every object a connector endpoint can snap/bind to — every visible
+   * item plus every non-connector canvas object (a connector never binds
+   * to another connector). */
+  function getBindingEligibleCandidates(): { id: string; pos: Position }[] {
+    const out: { id: string; pos: Position }[] = [];
+    for (const item of visibleItems) {
+      const pos = positions[item.id];
+      if (pos) out.push({ id: item.id, pos });
+    }
+    for (const obj of canvasObjectsState) {
+      if (obj.type === "connector") continue;
+      const pos = positions[obj.id];
+      if (pos) out.push({ id: obj.id, pos });
+    }
+    return out;
+  }
+
+  // Live DOM refs for each connector currently on the canvas — same
+  // "write straight to the DOM every frame, bypass setState" approach as
+  // nodeElRefs above, and for the same reason (a full React re-render on
+  // every pointermove is what caused the originally-reported drag
+  // jitter). Populated by ConnectorLayer's JSX below.
+  type ConnectorEls = {
+    path: SVGPathElement | null;
+    hitPath: SVGPathElement | null;
+    handles: (SVGCircleElement | null)[];
+    segHandles: (SVGLineElement | null)[];
+  };
+  const connectorElRefs = useRef<Record<string, ConnectorEls>>({});
+  function getConnectorEls(id: string): ConnectorEls {
+    if (!connectorElRefs.current[id]) {
+      connectorElRefs.current[id] = { path: null, hitPath: null, handles: [], segHandles: [] };
+    }
+    return connectorElRefs.current[id];
+  }
+
+  /** Writes a connector's current points straight to its DOM elements —
+   * the path geometry (both the visible stroke and the wider invisible
+   * hit-area share the same `d`) and every handle's position. Called
+   * every animation frame during any connector drag (create, endpoint,
+   * segment, or body) — see processConnectorFrame. */
+  function writeConnectorDom(id: string, points: { x: number; y: number }[]) {
+    const els = connectorElRefs.current[id];
+    if (!els) return;
+    const d = connectorPathD(points);
+    if (els.path) els.path.setAttribute("d", d);
+    if (els.hitPath) els.hitPath.setAttribute("d", d);
+    points.forEach((p, i) => {
+      const h = els.handles[i];
+      if (h) {
+        h.setAttribute("cx", String(p.x));
+        h.setAttribute("cy", String(p.y));
+      }
+    });
+    if (points.length === 3) {
+      const [start, corner, end] = points;
+      const seg0 = els.segHandles[0];
+      const seg1 = els.segHandles[1];
+      if (seg0) {
+        seg0.setAttribute("x1", String(start.x));
+        seg0.setAttribute("y1", String(start.y));
+        seg0.setAttribute("x2", String(corner.x));
+        seg0.setAttribute("y2", String(corner.y));
+      }
+      if (seg1) {
+        seg1.setAttribute("x1", String(corner.x));
+        seg1.setAttribute("y1", String(corner.y));
+        seg1.setAttribute("x2", String(end.x));
+        seg1.setAttribute("y2", String(end.y));
+      }
+    }
+  }
+
+  // Only re-renders (via React state) when the SNAPPED candidate itself
+  // changes — not on every pointermove — so the anchor-dot indicator can
+  // mount/unmount without turning connector dragging into a full-canvas
+  // re-render loop.
+  function setHoverBindingIfChanged(next: BindingCandidate | null) {
+    setHoverBinding((prev) => {
+      if (prev?.objectId === next?.objectId && prev?.anchor === next?.anchor) return prev;
+      return next;
+    });
+  }
+
+  const connectorRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (connectorRafRef.current != null) cancelAnimationFrame(connectorRafRef.current);
+    };
+  }, []);
+
+  type ConnectorCreateDragState = {
+    toolId: ConnectorToolId;
+    start: { x: number; y: number };
+    latestWorld: { x: number; y: number };
+    startBinding: CanvasConnectorBinding | null;
+    endBinding: CanvasConnectorBinding | null;
+    moved: boolean;
+  };
+  const connectorCreateDrag = useRef<ConnectorCreateDragState | null>(null);
+  // Mounts/unmounts the preview <path> — separate from the ref above so
+  // React only re-renders once per drag (on mount) instead of per frame;
+  // the preview's actual geometry is written imperatively, same as every
+  // other connector element.
+  const [connectorPreviewActive, setConnectorPreviewActive] = useState(false);
+  const PREVIEW_ID = "__connector_preview__";
+
+  function onConnectorCreatePointerDown(e: React.PointerEvent) {
+    if (!pendingConnectorTool || e.button !== 0) return;
+    const world = screenToCanvas(e.clientX, e.clientY);
+    const candidate = findBindingCandidate(
+      world,
+      getBindingEligibleCandidates(),
+      CONNECTOR_SNAP_RADIUS_SCREEN_PX / zoomRef.current,
+    );
+    const start = candidate?.point ?? world;
+    connectorCreateDrag.current = {
+      toolId: pendingConnectorTool,
+      start,
+      latestWorld: start,
+      startBinding: candidate ? { objectId: candidate.objectId, anchor: candidate.anchor } : null,
+      endBinding: null,
+      moved: false,
+    };
+    setHoverBindingIfChanged(candidate);
+    setConnectorPreviewActive(true);
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+
+  function onConnectorCreatePointerMove(e: React.PointerEvent) {
+    const drag = connectorCreateDrag.current;
+    if (!drag) return;
+    drag.latestWorld = screenToCanvas(e.clientX, e.clientY);
+    if (
+      Math.abs(drag.latestWorld.x - drag.start.x) > CLICK_THRESHOLD ||
+      Math.abs(drag.latestWorld.y - drag.start.y) > CLICK_THRESHOLD
+    ) {
+      drag.moved = true;
+    }
+    if (connectorRafRef.current == null) {
+      connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
+    }
+  }
+
+  async function onConnectorCreatePointerUp() {
+    if (connectorRafRef.current != null) {
+      cancelAnimationFrame(connectorRafRef.current);
+      connectorRafRef.current = null;
+    }
+    const drag = connectorCreateDrag.current;
+    connectorCreateDrag.current = null;
+    setConnectorPreviewActive(false);
+    setHoverBindingIfChanged(null);
+    if (!drag || !drag.moved) return; // a plain click with no real drag creates nothing
+
+    const preset = CONNECTOR_PRESETS[drag.toolId];
+    const end = drag.latestWorld;
+    const points =
+      preset.connectorType === "elbow" ? initialElbowRoute(drag.start, end) : [drag.start, end];
+    const bounds = boundsForConnectorPoints(points);
+    const z = ++maxZ.current;
+    const input = {
+      type: "connector" as const,
+      points,
+      connectorType: preset.connectorType,
+      startDecoration: preset.startDecoration,
+      endDecoration: preset.endDecoration,
+      startBinding: drag.startBinding,
+      endBinding: drag.endBinding,
+      fill: "#3B5BDB",
+      zIndex: z,
+      ...bounds,
+    };
+    try {
+      const created = await createObjectOnServer(input);
+      setCanvasObjectsState((prev) => [...prev, created]);
+      setPositions((prev) => ({
+        ...prev,
+        [created.id]: { x: created.x, y: created.y, w: created.w, h: created.h, zIndex: created.zIndex },
+      }));
+      setSelectedIds([created.id]);
+      pushUndo({ type: "object-create", obj: created });
+    } catch (err) {
+      console.error(err);
+      toast.error("Couldn't add that");
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // CONNECTOR EDITING — dragging an existing connector's start/end
+  // handle, an elbow's mid-segment handle, or its body (the whole line).
+  // Shares the rAF loop and DOM-write approach above with creation (only
+  // one of the two is ever active at once).
+  // -------------------------------------------------------------------
+
+  type ConnectorEditKind = "start" | "end" | "segment" | "body";
+  type ConnectorEditDragState = {
+    objId: string;
+    kind: ConnectorEditKind;
+    segmentIndex: number; // "segment" only: 0 = start-side, 1 = end-side
+    /** Locked in at drag-start from the connector's CURRENT route, so a
+     * mid-drag wobble in which delta is bigger can't suddenly flip which
+     * way the elbow bends. Only meaningful for a 3-point elbow. */
+    elbowOrientation: "h-first" | "v-first" | null;
+    origPoints: { x: number; y: number }[];
+    points: { x: number; y: number }[];
+    startBinding: CanvasConnectorBinding | null;
+    endBinding: CanvasConnectorBinding | null;
+    startWorld: { x: number; y: number };
+    latestWorld: { x: number; y: number };
+    startClientX: number;
+    startClientY: number;
+    moved: boolean;
+  };
+  const connectorEditDrag = useRef<ConnectorEditDragState | null>(null);
+
+  function beginConnectorEditDrag(e: React.PointerEvent, obj: ApiCanvasObject, kind: ConnectorEditKind, segmentIndex = 0) {
+    e.stopPropagation();
+    const livePoints = resolveConnectorPoints(obj, positions);
+    const world = screenToCanvas(e.clientX, e.clientY);
+    connectorEditDrag.current = {
+      objId: obj.id,
+      kind,
+      segmentIndex,
+      elbowOrientation: livePoints.length === 3 ? elbowOrientation(livePoints) : null,
+      origPoints: livePoints.map((p) => ({ ...p })),
+      points: livePoints.map((p) => ({ ...p })),
+      startBinding: obj.startBinding,
+      endBinding: obj.endBinding,
+      startWorld: world,
+      latestWorld: world,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      moved: false,
+    };
+    if (!(selectedIds.length === 1 && selectedIds[0] === obj.id)) setSelectedIds([obj.id]);
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+  function onConnectorHandlePointerDown(e: React.PointerEvent, obj: ApiCanvasObject, which: "start" | "end") {
+    beginConnectorEditDrag(e, obj, which);
+  }
+  function onConnectorSegmentPointerDown(e: React.PointerEvent, obj: ApiCanvasObject, segmentIndex: 0 | 1) {
+    beginConnectorEditDrag(e, obj, "segment", segmentIndex);
+  }
+  function onConnectorBodyPointerDown(e: React.PointerEvent, obj: ApiCanvasObject) {
+    beginConnectorEditDrag(e, obj, "body");
+  }
+
+  function onConnectorEditPointerMove(e: React.PointerEvent) {
+    const drag = connectorEditDrag.current;
+    if (!drag) return;
+    drag.latestWorld = screenToCanvas(e.clientX, e.clientY);
+    if (
+      Math.abs(e.clientX - drag.startClientX) > CLICK_THRESHOLD ||
+      Math.abs(e.clientY - drag.startClientY) > CLICK_THRESHOLD
+    ) {
+      drag.moved = true;
+    }
+    if (connectorRafRef.current == null) {
+      connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
+    }
+  }
+
+  function onConnectorEditPointerUp() {
+    if (connectorRafRef.current != null) {
+      cancelAnimationFrame(connectorRafRef.current);
+      connectorRafRef.current = null;
+    }
+    const drag = connectorEditDrag.current;
+    connectorEditDrag.current = null;
+    setHoverBindingIfChanged(null);
+    // A plain click (no real movement) is just a select — committing here
+    // too would both fire a needless network PATCH and (worse, for the
+    // "body" kind) unbind a connector's endpoints just because it was
+    // clicked, not actually dragged.
+    if (!drag || !drag.moved) return;
+    handleObjectStyleChange(drag.objId, {
+      points: drag.points,
+      startBinding: drag.startBinding,
+      endBinding: drag.endBinding,
+    });
+  }
+
+  // Runs at most once per animation frame while a connector create or
+  // edit drag is in progress — mirrors processDragFrame's shape exactly
+  // (read the latest known pointer position, write straight to the DOM,
+  // reschedule while the drag is still live) for the same performance
+  // reason: going through React state on every pointer event would
+  // re-render the whole canvas on every single mouse-move tick.
+  function processConnectorFrame() {
+    connectorRafRef.current = null;
+
+    const create = connectorCreateDrag.current;
+    if (create) {
+      if (!create.moved) return;
+      const preset = CONNECTOR_PRESETS[create.toolId];
+      const eligible = getBindingEligibleCandidates();
+      const candidate = findBindingCandidate(
+        create.latestWorld,
+        eligible,
+        CONNECTOR_SNAP_RADIUS_SCREEN_PX / zoomRef.current,
+      );
+      const end = candidate?.point ?? create.latestWorld;
+      create.endBinding = candidate ? { objectId: candidate.objectId, anchor: candidate.anchor } : null;
+      const points =
+        preset.connectorType === "elbow" ? initialElbowRoute(create.start, end) : [create.start, end];
+      writeConnectorDom(PREVIEW_ID, points);
+      setHoverBindingIfChanged(candidate);
+      connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
+      return;
+    }
+
+    const edit = connectorEditDrag.current;
+    if (edit) {
+      const world = edit.latestWorld;
+      if (edit.kind === "body") {
+        const dx = world.x - edit.startWorld.x;
+        const dy = world.y - edit.startWorld.y;
+        edit.points = edit.origPoints.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        // Dragging the whole body detaches it from anything it was
+        // bound to — its position is no longer implied by a target
+        // object once you've explicitly moved it as a free line.
+        edit.startBinding = null;
+        edit.endBinding = null;
+      } else if (edit.kind === "start" || edit.kind === "end") {
+        const eligible = getBindingEligibleCandidates();
+        const candidate = findBindingCandidate(
+          world,
+          eligible,
+          CONNECTOR_SNAP_RADIUS_SCREEN_PX / zoomRef.current,
+        );
+        const newPoint = candidate?.point ?? world;
+        const binding = candidate ? { objectId: candidate.objectId, anchor: candidate.anchor } : null;
+        if (edit.kind === "start") {
+          edit.points[0] = newPoint;
+          edit.startBinding = binding;
+        } else {
+          edit.points[edit.points.length - 1] = newPoint;
+          edit.endBinding = binding;
+        }
+        if (edit.elbowOrientation && edit.points.length === 3) {
+          edit.points = rerouteElbow(edit.points[0], edit.points[edit.points.length - 1], edit.elbowOrientation);
+        }
+        setHoverBindingIfChanged(candidate);
+      } else if (edit.kind === "segment" && edit.elbowOrientation && edit.points.length === 3) {
+        const dx = world.x - edit.startWorld.x;
+        const dy = world.y - edit.startWorld.y;
+        const pts = edit.origPoints.map((p) => ({ ...p }));
+        const horizontal = edit.elbowOrientation === "h-first";
+        if (edit.segmentIndex === 0) {
+          // The start-side segment — constrained perpendicular to its
+          // own orientation, and detaches the start binding (if any)
+          // since this moves the start point away from its anchor.
+          if (horizontal) {
+            pts[0].y += dy;
+            pts[1].y += dy;
+          } else {
+            pts[0].x += dx;
+            pts[1].x += dx;
+          }
+          edit.startBinding = null;
+        } else {
+          if (horizontal) {
+            pts[1].x += dx;
+            pts[2].x += dx;
+          } else {
+            pts[1].y += dy;
+            pts[2].y += dy;
+          }
+          edit.endBinding = null;
+        }
+        edit.points = pts;
+      }
+      writeConnectorDom(edit.objId, edit.points);
+      connectorRafRef.current = requestAnimationFrame(processConnectorFrame);
+    }
   }
 
   // -------------------------------------------------------------------
@@ -1416,6 +2023,16 @@ export function CollectionCanvas({
       }
     }
 
+    // A connector's bounding box is ALWAYS derived from its points, never
+    // set directly — see boundsForConnectorPoints's own comment. Every
+    // caller that changes a connector's geometry through this function
+    // (the decoration controls below, and every endpoint/segment/body
+    // drag in the CONNECTOR EDITING section) just passes the new
+    // `points`; the box comes along for free here.
+    if (patch.points) {
+      patch = { ...patch, ...boundsForConnectorPoints(patch.points) };
+    }
+
     const before: CanvasObjectPatch = {};
     for (const k of Object.keys(patch) as (keyof CanvasObjectPatch)[]) {
       (before as Record<string, unknown>)[k] = obj[k];
@@ -1434,14 +2051,30 @@ export function CollectionCanvas({
   // "nothing happened."
   const DUPLICATE_OFFSET = 20;
 
+  /** x/y offset for most objects — but a connector's real geometry is
+   * `points`, not x/y, so THAT'S what needs offsetting there (with x/y/w/h
+   * re-derived from it afterward, same as everywhere else connector
+   * geometry changes). Starts from the LIVE resolved points (not the
+   * possibly-stale stored ones — see resolveConnectorPoints) so a bound
+   * connector's duplicate starts from where it's actually drawn right
+   * now. The duplicate is also detached from any binding the original
+   * had — like every other object here, "contained in a frame" or
+   * "bound to a target" is a live relationship recomputed from position,
+   * not something a duplicate inherits verbatim. */
+  function offsetForDuplicate(obj: ApiCanvasObject, dx: number, dy: number): ApiCanvasObject {
+    if (obj.type === "connector" && obj.points) {
+      const points = resolveConnectorPoints(obj, positions).map((p) => ({ x: p.x + dx, y: p.y + dy }));
+      return { ...obj, points, startBinding: null, endBinding: null, ...boundsForConnectorPoints(points) };
+    }
+    return { ...obj, x: obj.x + dx, y: obj.y + dy };
+  }
+
   async function handleDuplicateObject(id: string) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
     try {
       const created = await recreateObjectOnServer({
-        ...obj,
-        x: obj.x + DUPLICATE_OFFSET,
-        y: obj.y + DUPLICATE_OFFSET,
+        ...offsetForDuplicate(obj, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
         zIndex: ++maxZ.current,
       });
       setCanvasObjectsState((prev) => [...prev, created]);
@@ -1466,9 +2099,7 @@ export function CollectionCanvas({
       const created = await Promise.all(
         objs.map((obj) =>
           recreateObjectOnServer({
-            ...obj,
-            x: obj.x + DUPLICATE_OFFSET,
-            y: obj.y + DUPLICATE_OFFSET,
+            ...offsetForDuplicate(obj, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
             zIndex: ++maxZ.current,
           }),
         ),
@@ -1716,12 +2347,15 @@ export function CollectionCanvas({
           onSelectTool={() => {
             setSelectedIds([]);
             setEditingId(null);
+            setPendingConnectorTool(null);
           }}
           onAddImage={() => fileInputRef.current?.click()}
           onAddSticky={handleAddSticky}
           onAddText={handleAddText}
           onAddShape={handleAddShape}
           onAddFrame={handleAddFrame}
+          pendingConnectorTool={pendingConnectorTool}
+          onArmConnectorTool={(id) => setPendingConnectorTool((cur) => (cur === id ? null : id))}
           onUndo={() => void undo()}
           onRedo={() => void redo()}
           canUndo={undoStack.length > 0}
@@ -1836,6 +2470,21 @@ export function CollectionCanvas({
         />
       )}
 
+      {/* Connector-tool overlay — mounted only while a connector tool is
+          armed, so it can capture the WHOLE drag-to-draw gesture in
+          screen space regardless of whether it starts over empty canvas
+          or on top of an existing object (which onNodePointerDown's own
+          stopPropagation would otherwise swallow before it ever reached
+          a plain background handler). */}
+      {pendingConnectorTool && (
+        <div
+          className="absolute inset-0 z-30 cursor-crosshair"
+          onPointerDown={onConnectorCreatePointerDown}
+          onPointerMove={onConnectorCreatePointerMove}
+          onPointerUp={() => void onConnectorCreatePointerUp()}
+        />
+      )}
+
       <div
         ref={viewportRef}
         className={cn(
@@ -1852,11 +2501,13 @@ export function CollectionCanvas({
           onBackgroundPointerMove(e);
           onResizeHandlePointerMove(e);
           onRotateHandlePointerMove(e);
+          onConnectorEditPointerMove(e);
         }}
         onPointerUp={() => {
           onBackgroundPointerUp();
           onResizeHandlePointerUp();
           onRotateHandlePointerUp();
+          onConnectorEditPointerUp();
         }}
       >
         <div
@@ -1902,6 +2553,7 @@ export function CollectionCanvas({
           })}
 
           {canvasObjectsState.map((obj) => {
+            if (obj.type === "connector") return null; // rendered by ConnectorLayer below, not here
             const pos = positions[obj.id];
             if (!pos) return null;
             const ref: NodeRef = { kind: "object", id: obj.id };
@@ -1985,6 +2637,250 @@ export function CollectionCanvas({
               </div>
             );
           })}
+
+          {/* Connectors — a shared vector layer, always on top of every
+              other object (drawn last), since each one is a real SVG
+              path rather than a sized div like everything else here. No
+              viewBox on this <svg> means 1 SVG user unit = 1 CSS px, so
+              it inherits this wrapper's own pan/zoom transform for free
+              — a connector's points are plain canvas-space numbers,
+              drawn directly, with no extra per-connector coordinate
+              math (see connectorPathD's comment). */}
+          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={1} height={1}>
+            {canvasObjectsState
+              .filter((o) => o.type === "connector")
+              .map((obj) => {
+                const points = resolveConnectorPoints(obj, positions);
+                if (points.length < 2) return null;
+                const els = getConnectorEls(obj.id);
+                const selected = selectedIds.length === 1 && selectedIds[0] === obj.id;
+                const stroke = obj.fill ?? "#3B5BDB";
+                const d = connectorPathD(points);
+                const startMarkerId = `connector-start-${obj.id}`;
+                const endMarkerId = `connector-end-${obj.id}`;
+                const isElbow = points.length === 3;
+                return (
+                  <g key={obj.id}>
+                    <defs>
+                      {obj.startDecoration === "arrow" && (
+                        <marker
+                          id={startMarkerId}
+                          viewBox="0 0 10 10"
+                          refX="8"
+                          refY="5"
+                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
+                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
+                          markerUnits="userSpaceOnUse"
+                          orient="auto-start-reverse"
+                        >
+                          <path d="M0,0 L10,5 L0,10 Z" fill={stroke} />
+                        </marker>
+                      )}
+                      {obj.endDecoration === "arrow" && (
+                        <marker
+                          id={endMarkerId}
+                          viewBox="0 0 10 10"
+                          refX="8"
+                          refY="5"
+                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
+                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M0,0 L10,5 L0,10 Z" fill={stroke} />
+                        </marker>
+                      )}
+                    </defs>
+                    {/* The visible line — thin, exactly what's drawn.
+                        Arrowheads are markers on THIS path, generated
+                        from its own geometry (orient="auto"/
+                        "auto-start-reverse"), so they always match the
+                        final segment's direction automatically, reverse
+                        automatically if the connector's direction
+                        reverses, and stay crisp at any zoom since
+                        they're real vector geometry, not an icon/glyph. */}
+                    <path
+                      ref={(el) => {
+                        els.path = el;
+                      }}
+                      d={d}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={CONNECTOR_STROKE_WIDTH}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      markerStart={obj.startDecoration === "arrow" ? `url(#${startMarkerId})` : undefined}
+                      markerEnd={obj.endDecoration === "arrow" ? `url(#${endMarkerId})` : undefined}
+                    />
+                    {/* Invisible, much wider hit area — see the
+                        CONNECTOR_HIT_STROKE_WIDTH comment: a bare 2.5px
+                        line is genuinely hard to click, this makes
+                        selecting/dragging a thin arrow easy without
+                        changing how anything looks. Also IS the "drag
+                        the whole connector" target. */}
+                    <path
+                      ref={(el) => {
+                        els.hitPath = el;
+                      }}
+                      d={d}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={CONNECTOR_HIT_STROKE_WIDTH}
+                      style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                      onPointerDown={(e) => onConnectorBodyPointerDown(e, obj)}
+                    />
+                    {selected && (
+                      <>
+                        {isElbow && (
+                          <>
+                            {/* Mid-segment drag handles — axis-constrained
+                                (see processConnectorFrame's "segment"
+                                branch): grabbing the horizontal segment
+                                only ever drags it vertically and vice
+                                versa, so the connector can never go
+                                accidentally diagonal. */}
+                            <line
+                              ref={(el) => {
+                                els.segHandles[0] = el;
+                              }}
+                              x1={points[0].x}
+                              y1={points[0].y}
+                              x2={points[1].x}
+                              y2={points[1].y}
+                              stroke="transparent"
+                              strokeWidth={CONNECTOR_HIT_STROKE_WIDTH}
+                              style={{
+                                pointerEvents: "stroke",
+                                cursor: elbowOrientation(points) === "h-first" ? "ns-resize" : "ew-resize",
+                              }}
+                              onPointerDown={(e) => onConnectorSegmentPointerDown(e, obj, 0)}
+                            />
+                            <line
+                              ref={(el) => {
+                                els.segHandles[1] = el;
+                              }}
+                              x1={points[1].x}
+                              y1={points[1].y}
+                              x2={points[2].x}
+                              y2={points[2].y}
+                              stroke="transparent"
+                              strokeWidth={CONNECTOR_HIT_STROKE_WIDTH}
+                              style={{
+                                pointerEvents: "stroke",
+                                cursor: elbowOrientation(points) === "h-first" ? "ew-resize" : "ns-resize",
+                              }}
+                              onPointerDown={(e) => onConnectorSegmentPointerDown(e, obj, 1)}
+                            />
+                          </>
+                        )}
+                        {/* Endpoint handles — sit directly on the actual
+                            start/end points, not a bounding-box corner,
+                            per the "selection UI follows the real
+                            geometry" requirement. */}
+                        {[points[0], points[points.length - 1]].map((p, i) => (
+                          <circle
+                            key={i}
+                            ref={(el) => {
+                              els.handles[i === 0 ? 0 : points.length - 1] = el;
+                            }}
+                            cx={p.x}
+                            cy={p.y}
+                            r={6}
+                            fill="var(--background)"
+                            stroke="var(--foreground)"
+                            strokeWidth={2}
+                            style={{ pointerEvents: "all", cursor: "crosshair" }}
+                            onPointerDown={(e) => onConnectorHandlePointerDown(e, obj, i === 0 ? "start" : "end")}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </g>
+                );
+              })}
+            {/* Live drag-to-create preview — same rendering as a real
+                connector (including binding-snap behavior), just not
+                backed by a stored object until the pointer is released. */}
+            {connectorPreviewActive &&
+              (() => {
+                const els = getConnectorEls(PREVIEW_ID);
+                const preset = pendingConnectorTool ? CONNECTOR_PRESETS[pendingConnectorTool] : null;
+                if (!preset) return null;
+                const previewMarkerId = "connector-preview-end";
+                return (
+                  <g>
+                    {preset.endDecoration === "arrow" && (
+                      <defs>
+                        <marker
+                          id={previewMarkerId}
+                          viewBox="0 0 10 10"
+                          refX="8"
+                          refY="5"
+                          markerWidth={CONNECTOR_ARROWHEAD_SIZE}
+                          markerHeight={CONNECTOR_ARROWHEAD_SIZE}
+                          markerUnits="userSpaceOnUse"
+                          orient="auto"
+                        >
+                          <path d="M0,0 L10,5 L0,10 Z" fill="#3B5BDB" />
+                        </marker>
+                      </defs>
+                    )}
+                    <path
+                      ref={(el) => {
+                        els.path = el;
+                      }}
+                      fill="none"
+                      stroke="#3B5BDB"
+                      strokeWidth={CONNECTOR_STROKE_WIDTH}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="6 4"
+                      markerEnd={preset.endDecoration === "arrow" ? `url(#${previewMarkerId})` : undefined}
+                    />
+                  </g>
+                );
+              })()}
+            {/* Binding indicator — the 5 candidate anchors of whatever
+                object a connector endpoint is currently hovering near,
+                with the actually-snapped one highlighted. Only mounted
+                while something's within snap range (see
+                setHoverBindingIfChanged), so this never re-renders on
+                every drag frame — just when the candidate changes. */}
+            {hoverBinding &&
+              (() => {
+                const pos = positions[hoverBinding.objectId];
+                if (!pos) return null;
+                return (
+                  <g className="pointer-events-none">
+                    <rect
+                      x={pos.x}
+                      y={pos.y}
+                      width={pos.w}
+                      height={pos.h}
+                      fill="none"
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      rx={6}
+                    />
+                    {CONNECTOR_ANCHORS.map((anchor) => {
+                      const p = connectorAnchorPoint(pos, anchor);
+                      const active = anchor === hoverBinding.anchor;
+                      return (
+                        <circle
+                          key={anchor}
+                          cx={p.x}
+                          cy={p.y}
+                          r={active ? 5 : 3}
+                          fill={active ? "var(--primary)" : "var(--background)"}
+                          stroke="var(--primary)"
+                          strokeWidth={2}
+                        />
+                      );
+                    })}
+                  </g>
+                );
+              })()}
+          </svg>
         </div>
       </div>
 
@@ -2132,58 +3028,17 @@ function CanvasObjectBody({
         />
       );
     }
-    // line / arrow / elbow-arrow — stroke-based, resized via the same
-    // bounding-box corner handles every other object uses (dragging a
-    // corner just redefines where the diagonal/elbow's endpoints fall).
-    // The viewBox is set to the object's REAL pixel size (not a fixed
-    // 0-100 box stretched via preserveAspectRatio="none") — a stroke-based
-    // shape's box is almost never square (a straight line starts at
-    // 200x4), and stretching a 100x100 space non-uniformly onto that also
-    // stretches everything defined inside it, including the arrowhead
-    // <marker> — which isn't covered by vector-effect="non-scaling-stroke"
-    // (that only protects the stroke itself). Using the real w/h means no
-    // scaling happens at all here, so the stroke and the arrowhead stay a
-    // constant, undistorted size no matter how long or short you drag it.
-    const stroke = obj.fill ?? "#3B5BDB";
-    const markerId = `canvas-arrowhead-${obj.id}`;
-    const w = obj.w;
-    const h = obj.h;
-    const inset = Math.min(3, w / 2, h / 2);
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="h-full w-full overflow-visible">
-        {variant !== "line" && (
-          <defs>
-            <marker id={markerId} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill={stroke} />
-            </marker>
-          </defs>
-        )}
-        {variant === "elbow-arrow" ? (
-          <path
-            d={`M${inset},${inset} L${w - inset},${inset} L${w - inset},${h - inset}`}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-            markerEnd={`url(#${markerId})`}
-          />
-        ) : (
-          <line
-            x1={inset}
-            y1={h / 2}
-            x2={w - inset}
-            y2={h / 2}
-            stroke={stroke}
-            strokeWidth={3}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-            markerEnd={variant === "arrow" ? `url(#${markerId})` : undefined}
-          />
-        )}
-      </svg>
-    );
+    // "line"/"arrow"/"elbow-arrow" used to render here as a box-shaped
+    // stroke drawing — that's the whole box-not-geometry design this
+    // session's connector rework replaced (see ConnectorLayer in the
+    // main render). Nothing creates a shape with one of these variants
+    // anymore (the toolbar's line/arrow/elbow options are gone, and
+    // lib/local/canvas-objects.ts's migration converts any old stored
+    // row to a real `type: "connector"` object the moment it's read) —
+    // this is unreachable in practice, kept only because
+    // CanvasShapeVariant's type still includes these values for that
+    // migration code to type-check against.
+    return null;
   }
   // frame
   return (

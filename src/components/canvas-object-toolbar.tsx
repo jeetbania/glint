@@ -12,9 +12,8 @@ import {
   Square,
   Circle,
   Triangle,
-  Slash,
-  ArrowUpRight,
-  CornerDownRight,
+  ArrowLeft,
+  ArrowRight,
   FlipHorizontal,
   FlipVertical,
   CopyPlus,
@@ -26,33 +25,26 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type {
-  ApiCanvasObject,
-  CanvasFontFamily,
-  CanvasShapeVariant,
-  CanvasTextAlign,
-} from "@/types/canvas-object";
+import type { ApiCanvasObject, CanvasFontFamily, CanvasTextAlign } from "@/types/canvas-object";
 
-const SHAPE_VARIANT_ICON: Record<CanvasShapeVariant, typeof Square> = {
+// Only the three real (non-connector) shape variants are choosable from
+// this toolbar's dropdown below — "line"/"arrow"/"elbow-arrow" are
+// legacy values CanvasShapeVariant still carries only so old stored rows
+// type-check through lib/local/canvas-objects.ts's one-time migration to
+// a real connector object; nothing creates them anymore.
+const SHAPE_VARIANT_ICON: Record<"rectangle" | "ellipse" | "triangle", typeof Square> = {
   rectangle: Square,
   ellipse: Circle,
   triangle: Triangle,
-  line: Slash,
-  arrow: ArrowUpRight,
-  "elbow-arrow": CornerDownRight,
 };
-const SHAPE_VARIANT_LABEL: Record<CanvasShapeVariant, string> = {
+const SHAPE_VARIANT_LABEL: Record<"rectangle" | "ellipse" | "triangle", string> = {
   rectangle: "Rectangle",
   ellipse: "Ellipse",
   triangle: "Triangle",
-  line: "Line",
-  arrow: "Arrow",
-  "elbow-arrow": "Elbow arrow",
 };
 
 const FONT_FAMILY_LABEL: Record<CanvasFontFamily, string> = {
@@ -94,12 +86,21 @@ export type CanvasObjectPatch = Partial<
     | "flipY"
     // x/y/w/h aren't set by any control in this toolbar directly — they
     // ride along only when collection-canvas.tsx's handleObjectStyleChange
-    // nudges a shape's box size as a side effect of a shapeVariant switch
-    // (line/arrow <-> elbow-arrow; see its comment).
+    // derives a new bounding box as a side effect of a connector's
+    // `points` changing, or (legacy) a shapeVariant switch's box nudge.
     | "x"
     | "y"
     | "w"
     | "h"
+    // connector-only — set via the decoration controls below, or by
+    // collection-canvas.tsx's own endpoint/segment/body drag handlers
+    // (not through this toolbar's UI directly).
+    | "points"
+    | "connectorType"
+    | "startDecoration"
+    | "endDecoration"
+    | "startBinding"
+    | "endBinding"
   >
 >;
 
@@ -122,11 +123,11 @@ export function CanvasObjectToolbar({
   style?: React.CSSProperties;
 }) {
   const hasText = obj.type === "sticky" || obj.type === "text";
-  const hasFill = obj.type === "sticky" || obj.type === "shape" || obj.type === "frame";
-  const isStrokeShape =
-    obj.type === "shape" &&
-    (obj.shapeVariant === "line" || obj.shapeVariant === "arrow" || obj.shapeVariant === "elbow-arrow");
-  const swatches = obj.type === "shape" ? TEXT_COLORS.concat(NOTE_COLORS) : NOTE_COLORS;
+  // Connectors reuse the same `fill` field as their stroke color (see
+  // the decoration controls below for their other, connector-specific
+  // controls).
+  const hasFill = obj.type === "sticky" || obj.type === "shape" || obj.type === "frame" || obj.type === "connector";
+  const swatches = obj.type === "shape" || obj.type === "connector" ? TEXT_COLORS.concat(NOTE_COLORS) : NOTE_COLORS;
 
   return (
     <div
@@ -216,7 +217,7 @@ export function CanvasObjectToolbar({
 
       {obj.type === "shape" &&
         (() => {
-          const variant = obj.shapeVariant ?? "rectangle";
+          const variant = (obj.shapeVariant ?? "rectangle") as "rectangle" | "ellipse" | "triangle";
           const Icon = SHAPE_VARIANT_ICON[variant];
           return (
             <>
@@ -235,16 +236,6 @@ export function CanvasObjectToolbar({
                       </DropdownMenuItem>
                     );
                   })}
-                  <DropdownMenuSeparator />
-                  {(["line", "arrow", "elbow-arrow"] as const).map((v) => {
-                    const ItemIcon = SHAPE_VARIANT_ICON[v];
-                    return (
-                      <DropdownMenuItem key={v} onClick={() => onChange({ shapeVariant: v })}>
-                        <ItemIcon className="size-4" />
-                        {SHAPE_VARIANT_LABEL[v]}
-                      </DropdownMenuItem>
-                    );
-                  })}
                 </DropdownMenuContent>
               </DropdownMenu>
               <span className="mx-0.5 h-4 w-px bg-border" />
@@ -252,31 +243,61 @@ export function CanvasObjectToolbar({
           );
         })()}
 
+      {obj.type === "connector" && (
+        <>
+          {/* Start/end decoration — this IS "line" vs "arrow" vs
+              "two-way arrow" now: all three (plus an elbow connector)
+              are the exact same underlying object, just with these two
+              independently toggled. Each is a plain 2-state toggle
+              (none <-> arrow) since that's the full set of decorations
+              for now. */}
+          <ToolbarToggle
+            label={obj.startDecoration === "arrow" ? "Start: arrow (click to remove)" : "Start: none (click to add arrow)"}
+            active={obj.startDecoration === "arrow"}
+            onClick={() => onChange({ startDecoration: obj.startDecoration === "arrow" ? "none" : "arrow" })}
+          >
+            <ArrowLeft className="size-3.5" />
+          </ToolbarToggle>
+          <ToolbarToggle
+            label={obj.endDecoration === "arrow" ? "End: arrow (click to remove)" : "End: none (click to add arrow)"}
+            active={obj.endDecoration === "arrow"}
+            onClick={() => onChange({ endDecoration: obj.endDecoration === "arrow" ? "none" : "arrow" })}
+          >
+            <ArrowRight className="size-3.5" />
+          </ToolbarToggle>
+          <span className="mx-0.5 h-4 w-px bg-border" />
+        </>
+      )}
+
       {hasFill && (
         <ColorSwatchPicker
-          label={obj.type === "sticky" ? "Note color" : isStrokeShape ? "Stroke color" : "Fill color"}
+          label={obj.type === "sticky" ? "Note color" : obj.type === "connector" ? "Stroke color" : "Fill color"}
           value={obj.fill ?? NOTE_COLORS[0]}
           colors={swatches}
           onChange={(fill) => onChange({ fill })}
         />
       )}
 
-      <span className="mx-0.5 h-4 w-px bg-border" />
+      {obj.type !== "connector" && (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-border" />
 
-      <ToolbarToggle
-        label="Flip horizontal"
-        active={!!obj.flipX}
-        onClick={() => onChange({ flipX: !obj.flipX })}
-      >
-        <FlipHorizontal className="size-3.5" />
-      </ToolbarToggle>
-      <ToolbarToggle
-        label="Flip vertical"
-        active={!!obj.flipY}
-        onClick={() => onChange({ flipY: !obj.flipY })}
-      >
-        <FlipVertical className="size-3.5" />
-      </ToolbarToggle>
+          <ToolbarToggle
+            label="Flip horizontal"
+            active={!!obj.flipX}
+            onClick={() => onChange({ flipX: !obj.flipX })}
+          >
+            <FlipHorizontal className="size-3.5" />
+          </ToolbarToggle>
+          <ToolbarToggle
+            label="Flip vertical"
+            active={!!obj.flipY}
+            onClick={() => onChange({ flipY: !obj.flipY })}
+          >
+            <FlipVertical className="size-3.5" />
+          </ToolbarToggle>
+        </>
+      )}
 
       <span className="mx-0.5 h-4 w-px bg-border" />
 
