@@ -54,6 +54,37 @@ async function categorizeWithOpenAi(blob: Blob, settings: AiSettings): Promise<C
   return parseResult(res.choices[0]?.message?.content ?? "");
 }
 
+/** Any OpenAI-compatible chat-completions endpoint — OpenRouter, NVIDIA
+ * NIM, a local Ollama/LM Studio server, etc. — via the OpenAI SDK with
+ * baseURL overridden, since that's the API shape all of these actually
+ * implement (including the `image_url` vision content-block format).
+ * Not every such endpoint supports vision models; a plain-text model
+ * picked here will just fail the request, same as picking a non-vision
+ * OpenAI model would. */
+async function categorizeWithCustom(blob: Blob, settings: AiSettings): Promise<CategorizeResult> {
+  const { default: OpenAI } = await import("openai");
+  const client = new OpenAI({
+    apiKey: settings.apiKey,
+    baseURL: settings.baseUrl.trim(),
+    dangerouslyAllowBrowser: true,
+  });
+  const base64 = await blobToBase64(blob);
+  const res = await client.chat.completions.create({
+    model: effectiveModel(settings),
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: PROMPT },
+          { type: "image_url", image_url: { url: `data:${blob.type};base64,${base64}` } },
+        ],
+      },
+    ],
+    max_tokens: 200,
+  });
+  return parseResult(res.choices[0]?.message?.content ?? "");
+}
+
 async function categorizeWithAnthropic(blob: Blob, settings: AiSettings): Promise<CategorizeResult> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
@@ -101,9 +132,11 @@ export async function categorizeImage(
   settings: AiSettings,
 ): Promise<CategorizeResult | null> {
   if (!settings.provider || !settings.apiKey.trim()) return null;
+  if (settings.provider === "custom" && !settings.baseUrl.trim()) return null;
   try {
     if (settings.provider === "openai") return await categorizeWithOpenAi(blob, settings);
     if (settings.provider === "anthropic") return await categorizeWithAnthropic(blob, settings);
+    if (settings.provider === "custom") return await categorizeWithCustom(blob, settings);
     return await categorizeWithGoogle(blob, settings);
   } catch (error) {
     console.error("[ai-categorize] failed", error);

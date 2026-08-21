@@ -1,6 +1,6 @@
 {
   "name": "glint",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -71,6 +71,11 @@
     "productName": "Glint",
     "directories": {
       "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jeetbania",
+      "repo": "glint"
     },
     "files": [
       "electron/**/*",

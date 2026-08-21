@@ -22,6 +22,7 @@ import {
   Sparkles,
   Eye,
   EyeOff,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -30,6 +31,7 @@ import { isElectron } from "@/lib/is-electron";
 import { cn } from "@/lib/utils";
 import { START_TOUR_EVENT } from "@/components/product-tour";
 import { AI_PROVIDERS, getAiSettings, setAiSettings, type AiSettings } from "@/lib/ai/settings";
+import { APP_VERSION, CHANGELOG } from "@/lib/version";
 import type { ApiItem } from "@/types/item";
 
 const SECTIONS = [
@@ -38,6 +40,7 @@ const SECTIONS = [
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { id: "data", label: "Data", icon: Database },
+  { id: "changelog", label: "Changelog", icon: History },
   { id: "about", label: "About", icon: Info },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -108,6 +111,7 @@ function SettingsDialog({
               {section === "ai" && <AiSection />}
               {section === "shortcuts" && <ShortcutsSection />}
               {section === "data" && <DataSection />}
+              {section === "changelog" && <ChangelogSection />}
               {section === "about" && <AboutSection />}
             </div>
           </div>
@@ -263,6 +267,28 @@ function AiSection() {
 
         {settings.provider && (
           <>
+            {settings.provider === "custom" && (
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  Base URL
+                </p>
+                <input
+                  type="text"
+                  value={settings.baseUrl}
+                  onChange={(e) => update({ baseUrl: e.target.value })}
+                  placeholder="https://openrouter.ai/api/v1"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-border/60 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Any OpenAI-compatible endpoint — e.g. OpenRouter
+                  (https://openrouter.ai/api/v1) or NVIDIA NIM
+                  (https://integrate.api.nvidia.com/v1).
+                </p>
+              </div>
+            )}
+
             <div>
               <p className="mb-1.5 text-xs font-medium text-muted-foreground">
                 {activeProvider?.label} API key
@@ -290,13 +316,17 @@ function AiSection() {
 
             <div>
               <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                Model (optional)
+                Model {settings.provider === "custom" ? "" : "(optional)"}
               </p>
               <input
                 type="text"
                 value={settings.model}
                 onChange={(e) => update({ model: e.target.value })}
-                placeholder={activeProvider?.defaultModel}
+                placeholder={
+                  settings.provider === "custom"
+                    ? "e.g. meta-llama/llama-3.2-11b-vision-instruct"
+                    : activeProvider?.defaultModel
+                }
                 className="w-full rounded-lg border border-border/60 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary"
               />
             </div>
@@ -399,6 +429,44 @@ function DataSection() {
   );
 }
 
+function ChangelogSection() {
+  return (
+    <div>
+      <SectionHeading>Changelog</SectionHeading>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Everything that&rsquo;s shipped, newest first — the same list the
+        &ldquo;What&rsquo;s new&rdquo; dialog shows the first time you open Glint
+        after an update.
+      </p>
+      <div className="space-y-5">
+        {CHANGELOG.map((entry) => (
+          <div key={entry.version}>
+            <div className="mb-2 flex items-baseline gap-2">
+              <p className="text-sm font-semibold">
+                {entry.version}
+                {entry.version === APP_VERSION && (
+                  <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                    Current
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">{entry.date}</p>
+            </div>
+            <ul className="space-y-1.5">
+              {entry.highlights.map((h, i) => (
+                <li key={i} className="flex gap-2 text-sm leading-snug">
+                  <span className="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/40" />
+                  <span>{h}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AboutSection() {
   return (
     <div>
@@ -409,7 +477,7 @@ function AboutSection() {
           <p className="font-heading text-base font-semibold tracking-heading">
             Glint
           </p>
-          <p className="text-xs text-muted-foreground">Version 0.1.0</p>
+          <p className="text-xs text-muted-foreground">Version {APP_VERSION}</p>
         </div>
       </div>
       <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">

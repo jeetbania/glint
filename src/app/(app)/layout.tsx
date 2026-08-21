@@ -13,6 +13,8 @@ import { ProductTour } from "@/components/product-tour";
 import { LocalDbInit } from "@/components/local-db-init";
 import { SearchTriggerButton } from "@/components/search-trigger-button";
 import { SettingsTriggerButton } from "@/components/settings-dialog";
+import { WhatsNewDialog } from "@/components/whats-new-dialog";
+import { UpdateChecker } from "@/components/update-checker";
 import { SoundUnlocker } from "@/lib/use-sound";
 import { logout } from "@/app/(auth)/login/actions";
 import { Button } from "@/components/ui/button";
@@ -98,6 +100,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <ProductTour />
       <SoundUnlocker />
+      <WhatsNewDialog />
+      <UpdateChecker />
     </SwrProvider>
   );
 }
