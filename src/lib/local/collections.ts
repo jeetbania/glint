@@ -10,6 +10,15 @@ export type CollectionWithPreview = {
   colorHue: number;
   previews: string[];
   hasNotesOrTasks: boolean;
+  // The most recently-added link in this collection that has no scraped
+  // OG image to show as a normal image preview (a lot of links never get
+  // one — paywalled pages, sites that block the scraper, plain text
+  // URLs). Without this a folder holding only such links showed no
+  // preview at all; this mirrors hasNotesOrTasks's ghost-card fallback
+  // but with enough of the link's own data to render the same
+  // favicon+domain+title mini card used elsewhere (item-card.tsx's
+  // LinkCardBody) instead of a generic placeholder.
+  textLink: { url: string; domain: string | null; title: string | null; faviconUrl: string | null } | null;
 };
 
 export async function listCollectionsWithPreview(): Promise<CollectionWithPreview[]> {
@@ -28,13 +37,26 @@ export async function listCollectionsWithPreview(): Promise<CollectionWithPrevie
       const it = itemById.get(ic.itemId);
       return it?.type === "note" || it?.type === "task";
     });
-    const previews = activeLinks
+    const sortedActiveItems = activeLinks
       .slice()
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .map((ic) => itemById.get(ic.itemId))
-      .map((it) => it?.blobUrl ?? it?.previewImageUrl ?? null)
+      .filter((it): it is NonNullable<typeof it> => !!it);
+    const previews = sortedActiveItems
+      .map((it) => it.blobUrl ?? it.previewImageUrl ?? null)
       .filter((v): v is string => !!v)
       .slice(0, 3);
+    const textLinkItem = sortedActiveItems.find(
+      (it) => it.type === "link" && !it.blobUrl && !it.previewImageUrl,
+    );
+    const textLink = textLinkItem
+      ? {
+          url: textLinkItem.url ?? "",
+          domain: textLinkItem.domain ?? null,
+          title: textLinkItem.title ?? null,
+          faviconUrl: textLinkItem.faviconUrl ?? null,
+        }
+      : null;
     return {
       id: col.id,
       name: col.name,
@@ -43,6 +65,7 @@ export async function listCollectionsWithPreview(): Promise<CollectionWithPrevie
       count: activeLinks.length,
       previews,
       hasNotesOrTasks,
+      textLink,
       updatedAt: col.updatedAt,
     };
   });

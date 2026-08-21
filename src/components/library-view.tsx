@@ -28,13 +28,16 @@ import { GhostCard, GhostBar } from "@/components/ui/ghost-card";
 import type { ApiItem, ItemType } from "@/types/item";
 import { localFetch } from "@/lib/local/api";
 
-/** The main Library view is visuals-only by default (images + links) —
- * Notes and Tasks live under their own dedicated tabs instead of
- * cluttering the primary grid. */
+/** The main Library view is the app's dashboard, so "All" pulls in every
+ * item type — including notes and tasks, which also have their own
+ * dedicated tabs for a focused view, but shouldn't be invisible from the
+ * homepage just because those tabs exist. */
 const VISUAL_TYPE_FILTERS: { value: string; label: string; types?: ItemType[] }[] = [
-  { value: "all", label: "All", types: ["image", "link"] },
+  { value: "all", label: "All", types: ["image", "link", "note", "task"] },
   { value: "image", label: "Images", types: ["image"] },
   { value: "link", label: "Links", types: ["link"] },
+  { value: "note", label: "Notes", types: ["note"] },
+  { value: "task", label: "Tasks", types: ["task"] },
 ];
 
 const DEFAULT_COLUMNS = 4;

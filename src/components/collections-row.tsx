@@ -7,7 +7,16 @@ import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { animate } from "motion";
 import { toast } from "sonner";
-import { Folder, Plus, MoreHorizontal, Pencil, Trash2, FolderOpen, Palette } from "lucide-react";
+import {
+  Folder,
+  Plus,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  FolderOpen,
+  Palette,
+  Link as LucideLinkIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCollectionActions } from "@/lib/use-collection-actions";
 import { FOLDER_HUE_PALETTE, type FolderHue } from "@/lib/folder-color";
@@ -40,13 +49,19 @@ type CollectionPreview = {
   colorHue: number;
   previews: string[];
   hasNotesOrTasks: boolean;
+  textLink: { url: string; domain: string | null; title: string | null; faviconUrl: string | null } | null;
 };
 
-// A folder's fanned preview slots — either a real image thumbnail or a
-// flat "ghost card" standing in for a note/task (which never has a
-// thumbnail of its own). Same monochrome ghost-card language as the
-// Notes/Tasks empty states (ui/ghost-card.tsx), shrunk to fit the fan.
-type PreviewSlot = { kind: "image"; src: string } | { kind: "note" };
+// A folder's fanned preview slots — a real image thumbnail, a flat
+// "ghost card" standing in for a note/task (which never has a thumbnail
+// of its own), or a mini favicon+domain+title card for a link that has
+// no scraped OG image to show as a real thumbnail (the same fallback
+// item-card.tsx's LinkCardBody uses, shrunk to fit the fan). Ghost-card
+// language matches the Notes/Tasks empty states (ui/ghost-card.tsx).
+type PreviewSlot =
+  | { kind: "image"; src: string }
+  | { kind: "note" }
+  | { kind: "link"; url: string; domain: string | null; title: string | null; faviconUrl: string | null };
 
 // Colors: a single pastel hue per folder, rendered as translucent
 // frosted glass (blur + partial opacity) rather than an opaque fill.
@@ -120,19 +135,21 @@ function FolderTile({
   // Portaling out of that row is what actually fixes it.
   const tileRef = useRef<HTMLDivElement | null>(null);
 
-  // Up to 3 fanned slots. A note/task never has a thumbnail, so without
-  // this it'd be invisible in the tile even though it's really in the
-  // collection — when there's at least one, one image slot gives way to
-  // a note ghost-card instead of showing 3 images and pretending there's
-  // nothing else there. Placed first (the back-left position, REST[0])
-  // so a real photo still gets the prominent centered spot whenever one
-  // exists.
-  const slots: PreviewSlot[] = collection.hasNotesOrTasks
-    ? [
-        { kind: "note" },
-        ...collection.previews.slice(0, 2).map((src): PreviewSlot => ({ kind: "image", src })),
-      ]
-    : collection.previews.slice(0, 3).map((src): PreviewSlot => ({ kind: "image", src }));
+  // Up to 3 fanned slots. A note/task or an image-less link never has a
+  // thumbnail, so without a stand-in slot either would be invisible in
+  // the tile even though it's really in the collection — each gets one
+  // slot (a note ghost-card / a mini link card) that bumps an image slot
+  // out rather than the tile showing images-only and pretending there's
+  // nothing else there. Placed first (the back-left/back-right fan
+  // positions) so a real photo still gets the prominent centered spot
+  // whenever one exists.
+  const extraSlots: PreviewSlot[] = [];
+  if (collection.hasNotesOrTasks) extraSlots.push({ kind: "note" });
+  if (collection.textLink) extraSlots.push({ kind: "link", ...collection.textLink });
+  const slots: PreviewSlot[] = [
+    ...extraSlots,
+    ...collection.previews.map((src): PreviewSlot => ({ kind: "image", src })),
+  ].slice(0, 3);
 
   useEffect(() => {
     imgRefs.current.forEach((el, i) => {
@@ -380,6 +397,21 @@ function FolderTile({
                 >
                   {slot.kind === "image" ? (
                     <PreviewImage src={slot.src} />
+                  ) : slot.kind === "link" ? (
+                    <>
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        {slot.faviconUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={slot.faviconUrl} alt="" className="size-3 shrink-0 rounded-sm" />
+                        ) : (
+                          <LucideLinkIcon className="size-3 shrink-0" />
+                        )}
+                        <span className="truncate">{slot.domain ?? slot.url}</span>
+                      </div>
+                      <p className="line-clamp-3 text-[11px] font-medium leading-snug">
+                        {slot.title ?? slot.url}
+                      </p>
+                    </>
                   ) : (
                     <>
                       <div className="mb-0.5 h-2 w-3/4 rounded-full bg-foreground/20" />

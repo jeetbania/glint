@@ -34,9 +34,18 @@ const CLICK_THRESHOLD = 4; // px of movement before a pointerdown counts as a dr
 const MIN_NODE_SIZE = 60;
 const MAX_HISTORY = 50;
 const EXPORT_PADDING = 48;
-const DRAG_TILT_MAX_DEG = 10; // clamp so a fast flick doesn't spin the card
-const DRAG_TILT_SENSITIVITY = 2.5; // degrees per px of the latest movement step
-const DRAG_TILT_EASE = 0.35; // per-frame lerp toward the target tilt — smooths out per-event noise
+// Drag tilt — a card/shape leans slightly in the direction it's being
+// dragged, Trello/FigJam-style. The whole pipeline (see processDragFrame):
+// raw per-frame pointer delta -> normalize to a velocity -> dead zone ->
+// low-pass filter (smoothedVelocity) -> clamp -> spring-damp toward the
+// rendered angle (currentTilt). Never set rotation directly from a raw
+// event; only currentTilt (spring-damped, rAF-driven) is ever painted.
+const DRAG_TILT_MAX_DEG = 8; // clamp target rotation to a small, subtle range
+const DRAG_TILT_SENSITIVITY = 2.5; // degrees per (px moved per ~16ms of real elapsed time) of smoothed velocity
+const DRAG_TILT_VELOCITY_SMOOTHING = 0.3; // low-pass filter factor (0-1): how fast smoothedVelocity follows the raw per-frame velocity
+const DRAG_TILT_SPRING = 0.35; // per-frame approach factor: how fast the rendered tilt chases its (smoothed, clamped) target
+const DRAG_TILT_DEAD_ZONE = 0.5; // px (per ~16ms) below which movement is treated as zero — ignores tiny pointer jitter while "holding still"
+const DRAG_TILT_SETTLE_EPSILON = 0.05; // deg — once |currentTilt| drops below this after release, the drag is considered settled
 
 type UndoEntry =
   | { type: "position"; ref: NodeRef; before: Position; after: Position }
@@ -111,16 +120,20 @@ function canvasObjectTransform(obj: ApiCanvasObject): string | undefined {
 // `left`/`top` CSS properties — left/top are layout properties, so
 // writing them on every pointermove during a drag forces the browser to
 // recompute layout on every single frame, which is what actually caused
-// the reported drag stutter/jitter (rotate itself was fine — the
-// combination of a per-frame layout recalc AND a per-frame rotate change
-// is what read as "shaking"). `translate()` is compositor-only, so the
-// browser can move the element every frame without ever touching layout.
-// `suffix` is the object's own persisted rotate/flip (canvasObjectTransform
-// above) for canvas objects, or undefined for library items (which don't
-// have one) — appended after the translate so it still rotates/flips
-// around the object's own center, not the canvas origin.
-function nodeTransform(x: number, y: number, suffix?: string): string {
-  return suffix ? `translate(${x}px, ${y}px) ${suffix}` : `translate(${x}px, ${y}px)`;
+// the reported drag stutter/jitter. `translate()` is compositor-only, so
+// the browser can move the element every frame without ever touching
+// layout. The drag tilt (see the DRAG_TILT_* constants above) rides in
+// this SAME string too, right after the translate — deliberately not on
+// the standalone CSS `rotate` property, which composes with `transform`
+// in a separate, easy-to-get-wrong step; folding everything into one
+// string keeps the composition unambiguous. `suffix` is the object's own
+// persisted rotate/flip (canvasObjectTransform above) for canvas
+// objects, or undefined for library items (which don't have one).
+function nodeTransform(x: number, y: number, tiltDeg: number, suffix?: string): string {
+  const parts = [`translate(${x}px, ${y}px)`];
+  if (Math.abs(tiltDeg) >= 0.01) parts.push(`rotate(${tiltDeg}deg)`);
+  if (suffix) parts.push(suffix);
+  return parts.join(" ");
 }
 
 function rectsIntersect(
@@ -840,7 +853,7 @@ export function CollectionCanvas({
   // if the node being dragged is part of a multi-selection). Persisted
   // on release; a plain click (no movement) selects/opens/edits instead.
   // -------------------------------------------------------------------
-  const nodeDrag = useRef<{
+  type NodeDragState = {
     refs: NodeRef[];
     primaryId: string;
     startX: number;
@@ -850,14 +863,23 @@ export function CollectionCanvas({
     latestX: number;
     latestY: number;
     /** Updated only inside processDragFrame, once per animation frame —
-     * the tilt step is measured against THIS, not the previous raw event,
-     * so it reads as "distance moved since last frame" (a stable ~16ms
-     * window) instead of "distance moved since last event" (noisy, since
-     * events don't arrive at a fixed cadence). */
+     * velocity is measured against THIS, not the previous raw event, so
+     * it reads as "distance moved since last frame" instead of "distance
+     * moved since last event" (noisy, since events don't arrive at a
+     * fixed cadence). */
     frameX: number;
-    /** Eased (lerped) tilt actually being painted — see DRAG_TILT_EASE. */
+    /** performance.now() at the last processed frame — lets velocity be
+     * normalized against real elapsed time instead of assuming a fixed
+     * ~16ms between frames (a dropped frame or a throttled tab shouldn't
+     * read as a sudden burst of extra velocity). */
+    lastFrameTime: number;
+    /** Low-pass-filtered velocity — see DRAG_TILT_VELOCITY_SMOOTHING. Raw
+     * per-frame velocity is never used directly for anything visual. */
+    smoothedVelocity: number;
+    /** The actual rendered tilt angle — spring-damped toward its target
+     * every frame (DRAG_TILT_SPRING), never snapped straight to it. This
+     * is the ONLY tilt value that ever gets painted. */
     currentTilt: number;
-    tiltStarted: boolean;
     bases: Record<string, Position>;
     /** Each dragged node's own persisted rotate/flip (canvas objects
      * only) — fixed for the whole drag, spliced back onto the live
@@ -865,7 +887,17 @@ export function CollectionCanvas({
      * shape keeps its angle while being dragged around. */
     transformSuffixes: Record<string, string | undefined>;
     moved: boolean;
-  } | null>(null);
+    /** Set on pointerup: the position is frozen at this exact release
+     * offset and processDragFrame stops tracking the pointer, instead
+     * just easing currentTilt back toward 0 on the same rAF loop — a
+     * natural settle instead of an instant snap-to-flat, with the final
+     * position/undo-entry/persistence only committed once it's visually
+     * neutral (see finishNodeDrag). */
+    releasing: boolean;
+    releaseDx: number;
+    releaseDy: number;
+  };
+  const nodeDrag = useRef<NodeDragState | null>(null);
 
   // Live DOM nodes for each item/object currently on the canvas, keyed by
   // id — lets the drag handlers below write position/tilt straight to the
@@ -873,9 +905,11 @@ export function CollectionCanvas({
   // setState, which would otherwise re-render every OTHER item/object on
   // the canvas too on every single pointermove (that full-subtree re-render
   // per event was the actual cause of the reported drag jitter — not the
-  // tilt math itself). React state is only touched once at drag-start and
-  // twice at drag-end (see onNodePointerUp), so the canvas stays cheap to
-  // paint regardless of how many items it holds.
+  // tilt math itself). React state is untouched for the ENTIRE drag +
+  // release-settle animation, only committed once at the very end (see
+  // finishNodeDrag), so the canvas stays cheap to paint regardless of how
+  // many items it holds and re-renders don't fight the rAF loop's own
+  // inline style writes mid-drag.
   const nodeElRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const dragRafRef = useRef<number | null>(null);
   useEffect(() => {
@@ -883,15 +917,6 @@ export function CollectionCanvas({
       if (dragRafRef.current != null) cancelAnimationFrame(dragRafRef.current);
     };
   }, []);
-
-  // Trello-card-style drag tilt — the dragged node(s) lean slightly toward
-  // whichever way the mouse just moved. dragTilt holds the live angle per
-  // node id — populated only at drag-start/drag-end now (see above), not
-  // per-frame — and tiltingIds marks which ids should skip the CSS
-  // transition (instant tracking while actively dragging) versus animate
-  // smoothly back to 0 once released.
-  const [dragTilt, setDragTilt] = useState<Record<string, number>>({});
-  const [tiltingIds, setTiltingIds] = useState<string[]>([]);
 
   function onNodePointerDown(e: React.PointerEvent, ref: NodeRef) {
     // While actively editing this object's text, let clicks/drags behave
@@ -942,63 +967,118 @@ export function CollectionCanvas({
       latestX: e.clientX,
       latestY: e.clientY,
       frameX: e.clientX,
+      lastFrameTime: performance.now(),
+      smoothedVelocity: 0,
       currentTilt: 0,
-      tiltStarted: false,
       bases,
       transformSuffixes,
       moved: false,
+      releasing: false,
+      releaseDx: 0,
+      releaseDy: 0,
     };
     target.setPointerCapture(e.pointerId);
   }
 
-  // Runs at most once per animation frame while a node drag is in
-  // progress — reads the latest known pointer position (kept fresh by
-  // onNodePointerMove on every raw event below) and writes position +
-  // tilt straight to each dragged element's inline style via nodeElRefs,
-  // bypassing setState entirely. That's what keeps a drag smooth
-  // regardless of how many other items/objects are sitting on the
-  // canvas — going through React state on every pointer event was
-  // re-rendering the ENTIRE canvas (every item and object, not just the
-  // one being dragged) on every single mouse-move tick, which is what
-  // actually caused the reported jitter.
+  // Commits a finished drag — either called from processDragFrame once
+  // the release-settle tilt animation has reached ~0, or (for a drag that
+  // ends with no tilt at all) effectively immediately. This is the ONLY
+  // place React state changes during the whole drag+release lifecycle:
+  // final position, the undo entry, and persistence all happen here,
+  // once, instead of being spread across the drag.
+  function finishNodeDrag(drag: NodeDragState) {
+    nodeDrag.current = null;
+    const zBase = maxZ.current;
+    const updates: Record<string, Position> = {};
+    drag.refs.forEach((r, i) => {
+      const base = drag.bases[r.id];
+      updates[r.id] = { ...base, x: base.x + drag.releaseDx, y: base.y + drag.releaseDy, zIndex: zBase + i + 1 };
+    });
+    maxZ.current = zBase + drag.refs.length;
+    setPositions((prev) => ({ ...prev, ...updates }));
+
+    if (drag.refs.length > 1) {
+      pushUndo({
+        type: "group-position",
+        refs: drag.refs,
+        before: drag.refs.map((r) => drag.bases[r.id]),
+        after: drag.refs.map((r) => updates[r.id]),
+      });
+    } else {
+      pushUndo({ type: "position", ref: drag.refs[0], before: drag.bases[drag.refs[0].id], after: updates[drag.refs[0].id] });
+    }
+    for (const r of drag.refs) persistPosition(r, updates[r.id]);
+  }
+
+  // Runs at most once per animation frame while a node drag (or its
+  // release-settle tail) is in progress — reads the latest known pointer
+  // position (kept fresh by onNodePointerMove on every raw event) and
+  // writes position + tilt straight to each dragged element's inline
+  // style via nodeElRefs, bypassing setState entirely. That's what keeps
+  // a drag smooth regardless of how many other items/objects are sitting
+  // on the canvas — going through React state on every pointer event was
+  // re-rendering the ENTIRE canvas on every single mouse-move tick, which
+  // is what actually caused the originally-reported jitter.
   function processDragFrame() {
     dragRafRef.current = null;
     const drag = nodeDrag.current;
-    if (!drag || !drag.moved) return;
+    if (!drag || (!drag.moved && !drag.releasing)) return;
 
-    const dx = (drag.latestX - drag.startX) / zoomRef.current;
-    const dy = (drag.latestY - drag.startY) / zoomRef.current;
+    const now = performance.now();
+    const dtMs = Math.max(1, now - drag.lastFrameTime);
+    drag.lastFrameTime = now;
+
+    let dx: number;
+    let dy: number;
+
+    if (drag.releasing) {
+      // Position is frozen at the exact offset the pointer was released
+      // at — from here only the tilt keeps animating, easing back to 0
+      // instead of snapping flat the instant the pointer lifts.
+      dx = drag.releaseDx;
+      dy = drag.releaseDy;
+      drag.currentTilt += (0 - drag.currentTilt) * DRAG_TILT_SPRING;
+    } else {
+      dx = (drag.latestX - drag.startX) / zoomRef.current;
+      dy = (drag.latestY - drag.startY) / zoomRef.current;
+
+      // Tilt pipeline — see the DRAG_TILT_* constants' comment. Raw
+      // per-frame movement (normalized to a "per ~16ms" rate using the
+      // actual elapsed time, so a dropped frame doesn't read as a burst
+      // of velocity) goes through a dead zone, then a low-pass filter,
+      // and ONLY the filtered result ever becomes a rotation target —
+      // never the raw delta directly.
+      const stepDx = drag.latestX - drag.frameX;
+      drag.frameX = drag.latestX;
+      const rawVelocity = (stepDx / dtMs) * 16;
+      const gatedVelocity = Math.abs(rawVelocity) < DRAG_TILT_DEAD_ZONE ? 0 : rawVelocity;
+      drag.smoothedVelocity += (gatedVelocity - drag.smoothedVelocity) * DRAG_TILT_VELOCITY_SMOOTHING;
+      const targetTilt = Math.max(
+        -DRAG_TILT_MAX_DEG,
+        Math.min(DRAG_TILT_MAX_DEG, drag.smoothedVelocity * DRAG_TILT_SENSITIVITY),
+      );
+      // Spring-damp the rendered angle toward that target rather than
+      // snapping to it — this is what actually gets painted below.
+      drag.currentTilt += (targetTilt - drag.currentTilt) * DRAG_TILT_SPRING;
+    }
+
     for (const r of drag.refs) {
       const base = drag.bases[r.id];
       const el = nodeElRefs.current[r.id];
       if (base && el) {
-        el.style.transform = nodeTransform(base.x + dx, base.y + dy, drag.transformSuffixes[r.id]);
+        el.style.transform = nodeTransform(base.x + dx, base.y + dy, drag.currentTilt, drag.transformSuffixes[r.id]);
       }
     }
 
-    // Tilt toward the direction moved since the LAST PROCESSED FRAME (not
-    // the last raw pointer event, which can arrive in irregular bursts) —
-    // a quick flick tilts more than a slow drag, same as dragging a
-    // physical card. Then eased toward that target instead of snapping
-    // straight to it (DRAG_TILT_EASE), so a sudden reversal in direction
-    // settles smoothly instead of flickering between two angles a single
-    // frame apart.
-    const stepDx = drag.latestX - drag.frameX;
-    drag.frameX = drag.latestX;
-    const targetTilt = Math.max(
-      -DRAG_TILT_MAX_DEG,
-      Math.min(DRAG_TILT_MAX_DEG, stepDx * DRAG_TILT_SENSITIVITY),
-    );
-    drag.currentTilt += (targetTilt - drag.currentTilt) * DRAG_TILT_EASE;
-    const tiltStyle = Math.abs(drag.currentTilt) < 0.05 ? "" : `${drag.currentTilt}deg`;
-    for (const r of drag.refs) {
-      const el = nodeElRefs.current[r.id];
-      if (el) el.style.rotate = tiltStyle;
+    if (drag.releasing && Math.abs(drag.currentTilt) < DRAG_TILT_SETTLE_EPSILON) {
+      finishNodeDrag(drag);
+      return;
     }
 
-    // Keep the loop alive for the rest of the drag — needed so the eased
-    // tilt keeps decaying toward its target even in the (common) case
-    // where the pointer holds still for a moment mid-drag.
+    // Keep the loop alive — needed so the spring-damped tilt keeps
+    // approaching its target even in the (common) case where the pointer
+    // holds still for a moment mid-drag, and so the release-settle tail
+    // keeps playing after the pointer has already lifted.
     dragRafRef.current = requestAnimationFrame(processDragFrame);
   }
 
@@ -1010,28 +1090,21 @@ export function CollectionCanvas({
     const dx = (e.clientX - drag.startX) / zoomRef.current;
     const dy = (e.clientY - drag.startY) / zoomRef.current;
     if (Math.abs(dx) > CLICK_THRESHOLD || Math.abs(dy) > CLICK_THRESHOLD) drag.moved = true;
-    if (drag.moved) {
-      if (!drag.tiltStarted) {
-        drag.tiltStarted = true;
-        setTiltingIds(drag.refs.map((r) => r.id));
-      }
-      if (dragRafRef.current == null) {
-        dragRafRef.current = requestAnimationFrame(processDragFrame);
-      }
+    if (drag.moved && dragRafRef.current == null) {
+      dragRafRef.current = requestAnimationFrame(processDragFrame);
     }
   }
 
   function onNodePointerUp(e: React.PointerEvent, ref: NodeRef) {
     const drag = nodeDrag.current;
-    nodeDrag.current = null;
     if (!drag || drag.primaryId !== ref.id) return;
 
-    if (dragRafRef.current != null) {
-      cancelAnimationFrame(dragRafRef.current);
-      dragRafRef.current = null;
-    }
-
     if (!drag.moved) {
+      nodeDrag.current = null;
+      if (dragRafRef.current != null) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
       if (ref.kind === "item") {
         setSelectedIds([]);
         setEditingId(null);
@@ -1056,52 +1129,19 @@ export function CollectionCanvas({
       return;
     }
 
-    // Hand the live tilt value back to React in two steps, one animation
-    // frame apart. Step 1 (right now) syncs React's state to the exact
-    // angle the element is already showing — transition still off, so
-    // this paints identically to the current frame. Step 2 (next frame,
-    // below) clears it with the transition back on, which is what
-    // actually plays the settle-to-neutral animation instead of
-    // snapping the tilt off instantly.
-    const finalTilt = Math.abs(drag.currentTilt) < 0.05 ? 0 : drag.currentTilt;
-    if (finalTilt !== 0) {
-      setDragTilt((prev) => {
-        const next = { ...prev };
-        for (const r of drag.refs) next[r.id] = finalTilt;
-        return next;
-      });
+    // Freeze position at this exact release offset and switch the
+    // already-running rAF loop into "releasing" mode (see
+    // processDragFrame) — it keeps animating currentTilt back to 0 on
+    // its own, only committing the final position/undo/persistence (via
+    // finishNodeDrag) once that settle is visually done. No CSS
+    // transition handoff involved — the same rAF loop owns the entire
+    // drag AND its release animation start to finish.
+    drag.releaseDx = (e.clientX - drag.startX) / zoomRef.current;
+    drag.releaseDy = (e.clientY - drag.startY) / zoomRef.current;
+    drag.releasing = true;
+    if (dragRafRef.current == null) {
+      dragRafRef.current = requestAnimationFrame(processDragFrame);
     }
-    requestAnimationFrame(() => {
-      setTiltingIds([]);
-      setDragTilt((prev) => {
-        const next = { ...prev };
-        for (const r of drag.refs) delete next[r.id];
-        return next;
-      });
-    });
-
-    const dx = (e.clientX - drag.startX) / zoomRef.current;
-    const dy = (e.clientY - drag.startY) / zoomRef.current;
-    const zBase = maxZ.current;
-    const updates: Record<string, Position> = {};
-    drag.refs.forEach((r, i) => {
-      const base = drag.bases[r.id];
-      updates[r.id] = { ...base, x: base.x + dx, y: base.y + dy, zIndex: zBase + i + 1 };
-    });
-    maxZ.current = zBase + drag.refs.length;
-    setPositions((prev) => ({ ...prev, ...updates }));
-
-    if (drag.refs.length > 1) {
-      pushUndo({
-        type: "group-position",
-        refs: drag.refs,
-        before: drag.refs.map((r) => drag.bases[r.id]),
-        after: drag.refs.map((r) => updates[r.id]),
-      });
-    } else {
-      pushUndo({ type: "position", ref: drag.refs[0], before: drag.bases[drag.refs[0].id], after: updates[drag.refs[0].id] });
-    }
-    for (const r of drag.refs) persistPosition(r, updates[r.id]);
   }
 
   // -------------------------------------------------------------------
@@ -1354,6 +1394,28 @@ export function CollectionCanvas({
   function handleObjectStyleChange(id: string, patch: CanvasObjectPatch) {
     const obj = canvasObjectsState.find((o) => o.id === id);
     if (!obj) return;
+
+    // Switching a stroke-based shape's variant needs a companion size
+    // nudge: line/arrow default to a thin ~4px-tall horizontal strip (see
+    // defaultObjectFor), but elbow-arrow's bend needs real height to read
+    // at all — switching TO it while still that thin flattens the elbow's
+    // vertical leg down to nothing, so it renders as what looks like a
+    // plain straight line. Switching back the other way undoes it. Only
+    // fires on an actual thin<->box crossing, anchored on the shape's
+    // current center so it doesn't jump around on screen.
+    if (patch.shapeVariant && patch.shapeVariant !== obj.shapeVariant) {
+      const wasThin = obj.shapeVariant === "line" || obj.shapeVariant === "arrow";
+      const isThin = patch.shapeVariant === "line" || patch.shapeVariant === "arrow";
+      const cx = obj.x + obj.w / 2;
+      const cy = obj.y + obj.h / 2;
+      if (wasThin && !isThin && obj.h < 40) {
+        const size = Math.max(obj.w, 160);
+        patch = { ...patch, x: cx - size / 2, y: cy - size / 2, w: size, h: size };
+      } else if (!wasThin && isThin && obj.h > 20) {
+        patch = { ...patch, y: cy - 2, h: 4 };
+      }
+    }
+
     const before: CanvasObjectPatch = {};
     for (const k of Object.keys(patch) as (keyof CanvasObjectPatch)[]) {
       (before as Record<string, unknown>)[k] = obj[k];
@@ -1806,8 +1868,6 @@ export function CollectionCanvas({
             if (!pos) return null;
             const ref: NodeRef = { kind: "item", id: item.id };
             const selected = selectedIds.includes(item.id);
-            const tilt = dragTilt[item.id];
-            const isTilting = tiltingIds.includes(item.id);
             return (
               <div
                 key={item.id}
@@ -1820,8 +1880,7 @@ export function CollectionCanvas({
                 onPointerUp={(e) => onNodePointerUp(e, ref)}
                 className={cn(
                   "absolute cursor-pointer touch-none select-none rounded-xl shadow-[0_4px_12px_-6px_rgba(0,0,0,0.2)]",
-                  isTilting ? "transition-shadow" : "transition-[box-shadow,rotate] duration-300 ease-out",
-                  "hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
+                  "transition-shadow duration-300 ease-out hover:shadow-[0_8px_18px_-8px_rgba(0,0,0,0.28)]",
                   selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 )}
                 style={{
@@ -1830,8 +1889,11 @@ export function CollectionCanvas({
                   width: pos.w,
                   height: pos.h,
                   zIndex: pos.zIndex,
-                  transform: nodeTransform(pos.x, pos.y),
-                  rotate: tilt ? `${tilt}deg` : undefined,
+                  // Position AND drag-tilt both ride in this one string —
+                  // see nodeTransform's comment for why tilt isn't on the
+                  // standalone `rotate` property. At rest (not being
+                  // dragged) tilt is always 0.
+                  transform: nodeTransform(pos.x, pos.y, 0),
                 }}
               >
                 <CanvasItemBody item={item} />
@@ -1845,8 +1907,6 @@ export function CollectionCanvas({
             const ref: NodeRef = { kind: "object", id: obj.id };
             const selected = selectedIds.includes(obj.id);
             const showHandles = selected && selectedIds.length === 1;
-            const tilt = dragTilt[obj.id];
-            const isTilting = tiltingIds.includes(obj.id);
             return (
               <div
                 key={obj.id}
@@ -1861,7 +1921,6 @@ export function CollectionCanvas({
                   "absolute touch-none select-none",
                   obj.type === "frame" ? "cursor-default" : "cursor-pointer",
                   selected && !showHandles && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-md",
-                  !isTilting && "transition-[rotate] duration-300 ease-out",
                 )}
                 style={{
                   left: 0,
@@ -1869,24 +1928,20 @@ export function CollectionCanvas({
                   width: pos.w,
                   height: pos.h,
                   zIndex: pos.zIndex,
-                  // Position rides on `transform: translate()` (not
-                  // left/top — see nodeTransform's comment above) with
-                  // obj.rotation/flip (persisted, via the rotate handle)
-                  // appended after it; the temporary drag-tilt rides on the
-                  // standalone `rotate` property instead — the two
-                  // compose together rather than fighting over one
-                  // property, so a rotated shape still tilts correctly
-                  // mid-drag and settles back to its own true angle.
-                  // Flip is listed AFTER rotate on purpose: CSS applies
-                  // the last-listed function to the object's own local
-                  // coordinates first, so scaleX/scaleY mirror the shape
-                  // in its own unrotated space and rotate() then carries
-                  // that already-mirrored result around — flip and
-                  // rotation stay independent of each other exactly like
-                  // Figma's model, instead of an arrow's flip direction
-                  // silently depending on whatever angle it's rotated to.
-                  transform: nodeTransform(pos.x, pos.y, canvasObjectTransform(obj)),
-                  rotate: tilt ? `${tilt}deg` : undefined,
+                  // Position, drag-tilt, and obj.rotation/flip (persisted,
+                  // via the rotate handle) all ride in this one `transform`
+                  // string — see nodeTransform's comment for why tilt isn't
+                  // on the standalone `rotate` property. At rest (not being
+                  // dragged) tilt is always 0. Flip is listed AFTER rotate
+                  // on purpose: CSS applies the last-listed function to the
+                  // object's own local coordinates first, so scaleX/scaleY
+                  // mirror the shape in its own unrotated space and
+                  // rotate() then carries that already-mirrored result
+                  // around — flip and rotation stay independent of each
+                  // other exactly like Figma's model, instead of an
+                  // arrow's flip direction silently depending on whatever
+                  // angle it's rotated to.
+                  transform: nodeTransform(pos.x, pos.y, 0, canvasObjectTransform(obj)),
                 }}
               >
                 <CanvasObjectBody

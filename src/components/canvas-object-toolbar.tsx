@@ -92,6 +92,14 @@ export type CanvasObjectPatch = Partial<
     | "rotation"
     | "flipX"
     | "flipY"
+    // x/y/w/h aren't set by any control in this toolbar directly — they
+    // ride along only when collection-canvas.tsx's handleObjectStyleChange
+    // nudges a shape's box size as a side effect of a shapeVariant switch
+    // (line/arrow <-> elbow-arrow; see its comment).
+    | "x"
+    | "y"
+    | "w"
+    | "h"
   >
 >;
 
