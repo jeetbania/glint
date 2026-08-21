@@ -95,12 +95,32 @@ function readImageDimensions(blob: Blob): Promise<{ width: number; height: numbe
   });
 }
 
+// The object's own persisted rotate/flip, WITHOUT a translate — kept
+// separate from nodeTransform() below so a drag frame can reuse just
+// this part (fixed for the duration of a drag) while swapping in a
+// fresh translate every frame.
 function canvasObjectTransform(obj: ApiCanvasObject): string | undefined {
   const parts: string[] = [];
   if (obj.rotation) parts.push(`rotate(${obj.rotation}deg)`);
   if (obj.flipX) parts.push("scaleX(-1)");
   if (obj.flipY) parts.push("scaleY(-1)");
   return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+// Position is painted via `transform: translate()` rather than the
+// `left`/`top` CSS properties — left/top are layout properties, so
+// writing them on every pointermove during a drag forces the browser to
+// recompute layout on every single frame, which is what actually caused
+// the reported drag stutter/jitter (rotate itself was fine — the
+// combination of a per-frame layout recalc AND a per-frame rotate change
+// is what read as "shaking"). `translate()` is compositor-only, so the
+// browser can move the element every frame without ever touching layout.
+// `suffix` is the object's own persisted rotate/flip (canvasObjectTransform
+// above) for canvas objects, or undefined for library items (which don't
+// have one) — appended after the translate so it still rotates/flips
+// around the object's own center, not the canvas origin.
+function nodeTransform(x: number, y: number, suffix?: string): string {
+  return suffix ? `translate(${x}px, ${y}px) ${suffix}` : `translate(${x}px, ${y}px)`;
 }
 
 function rectsIntersect(
@@ -839,6 +859,11 @@ export function CollectionCanvas({
     currentTilt: number;
     tiltStarted: boolean;
     bases: Record<string, Position>;
+    /** Each dragged node's own persisted rotate/flip (canvas objects
+     * only) — fixed for the whole drag, spliced back onto the live
+     * translate every frame in processDragFrame so an already-rotated
+     * shape keeps its angle while being dragged around. */
+    transformSuffixes: Record<string, string | undefined>;
     moved: boolean;
   } | null>(null);
 
@@ -898,9 +923,14 @@ export function CollectionCanvas({
     }
 
     const bases: Record<string, Position> = {};
+    const transformSuffixes: Record<string, string | undefined> = {};
     for (const r of refs) {
       const p = positions[r.id];
       if (p) bases[r.id] = p;
+      if (r.kind === "object") {
+        const o = canvasObjectsState.find((c) => c.id === r.id);
+        if (o) transformSuffixes[r.id] = canvasObjectTransform(o);
+      }
     }
     if (Object.keys(bases).length === 0) return;
 
@@ -915,6 +945,7 @@ export function CollectionCanvas({
       currentTilt: 0,
       tiltStarted: false,
       bases,
+      transformSuffixes,
       moved: false,
     };
     target.setPointerCapture(e.pointerId);
@@ -941,8 +972,7 @@ export function CollectionCanvas({
       const base = drag.bases[r.id];
       const el = nodeElRefs.current[r.id];
       if (base && el) {
-        el.style.left = `${base.x + dx}px`;
-        el.style.top = `${base.y + dy}px`;
+        el.style.transform = nodeTransform(base.x + dx, base.y + dy, drag.transformSuffixes[r.id]);
       }
     }
 
@@ -1795,11 +1825,12 @@ export function CollectionCanvas({
                   selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 )}
                 style={{
-                  left: pos.x,
-                  top: pos.y,
+                  left: 0,
+                  top: 0,
                   width: pos.w,
                   height: pos.h,
                   zIndex: pos.zIndex,
+                  transform: nodeTransform(pos.x, pos.y),
                   rotate: tilt ? `${tilt}deg` : undefined,
                 }}
               >
@@ -1833,13 +1864,15 @@ export function CollectionCanvas({
                   !isTilting && "transition-[rotate] duration-300 ease-out",
                 )}
                 style={{
-                  left: pos.x,
-                  top: pos.y,
+                  left: 0,
+                  top: 0,
                   width: pos.w,
                   height: pos.h,
                   zIndex: pos.zIndex,
-                  // obj.rotation (persisted, via the rotate handle) rides
-                  // on `transform`; the temporary drag-tilt rides on the
+                  // Position rides on `transform: translate()` (not
+                  // left/top — see nodeTransform's comment above) with
+                  // obj.rotation/flip (persisted, via the rotate handle)
+                  // appended after it; the temporary drag-tilt rides on the
                   // standalone `rotate` property instead — the two
                   // compose together rather than fighting over one
                   // property, so a rotated shape still tilts correctly
@@ -1852,7 +1885,7 @@ export function CollectionCanvas({
                   // rotation stay independent of each other exactly like
                   // Figma's model, instead of an arrow's flip direction
                   // silently depending on whatever angle it's rotated to.
-                  transform: canvasObjectTransform(obj),
+                  transform: nodeTransform(pos.x, pos.y, canvasObjectTransform(obj)),
                   rotate: tilt ? `${tilt}deg` : undefined,
                 }}
               >
@@ -2047,10 +2080,22 @@ function CanvasObjectBody({
     // line / arrow / elbow-arrow — stroke-based, resized via the same
     // bounding-box corner handles every other object uses (dragging a
     // corner just redefines where the diagonal/elbow's endpoints fall).
+    // The viewBox is set to the object's REAL pixel size (not a fixed
+    // 0-100 box stretched via preserveAspectRatio="none") — a stroke-based
+    // shape's box is almost never square (a straight line starts at
+    // 200x4), and stretching a 100x100 space non-uniformly onto that also
+    // stretches everything defined inside it, including the arrowhead
+    // <marker> — which isn't covered by vector-effect="non-scaling-stroke"
+    // (that only protects the stroke itself). Using the real w/h means no
+    // scaling happens at all here, so the stroke and the arrowhead stay a
+    // constant, undistorted size no matter how long or short you drag it.
     const stroke = obj.fill ?? "#3B5BDB";
     const markerId = `canvas-arrowhead-${obj.id}`;
+    const w = obj.w;
+    const h = obj.h;
+    const inset = Math.min(3, w / 2, h / 2);
     return (
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+      <svg viewBox={`0 0 ${w} ${h}`} className="h-full w-full overflow-visible">
         {variant !== "line" && (
           <defs>
             <marker id={markerId} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
@@ -2060,7 +2105,7 @@ function CanvasObjectBody({
         )}
         {variant === "elbow-arrow" ? (
           <path
-            d="M2,2 L98,2 L98,98"
+            d={`M${inset},${inset} L${w - inset},${inset} L${w - inset},${h - inset}`}
             fill="none"
             stroke={stroke}
             strokeWidth={3}
@@ -2071,10 +2116,10 @@ function CanvasObjectBody({
           />
         ) : (
           <line
-            x1={2}
-            y1={50}
-            x2={98}
-            y2={50}
+            x1={inset}
+            y1={h / 2}
+            x2={w - inset}
+            y2={h / 2}
             stroke={stroke}
             strokeWidth={3}
             strokeLinecap="round"

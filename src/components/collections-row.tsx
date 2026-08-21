@@ -29,6 +29,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { localFetch } from "@/lib/local/api";
+import { useResolvedImageSrc } from "@/lib/local/blobs";
 import { GLINT_ITEM_DRAG_TYPE } from "@/lib/drag-types";
 
 type CollectionPreview = {
@@ -82,6 +83,17 @@ const OPEN_POS = [
   { x: 46, y: -6, rotate: 10 },
 ];
 const IMAGE_Z = [1, 2, 1]; // center paints on top, matching the reference
+
+// A preview slot's image src is whatever's on the item — for a local
+// image that's a `local-blob:` reference, not a renderable URL, so it
+// needs resolving to a real object URL first (same as RecentThumb in
+// command-palette.tsx). Pulled into its own component so the resolve
+// hook runs once per slot rather than conditionally inside the .map().
+function PreviewImage({ src }: { src: string }) {
+  const resolved = useResolvedImageSrc(src);
+  if (!resolved) return null;
+  return <Image src={resolved} alt="" fill className="object-cover" unoptimized />;
+}
 
 function FolderTile({
   collection,
@@ -367,7 +379,7 @@ function FolderTile({
                   }}
                 >
                   {slot.kind === "image" ? (
-                    <Image src={slot.src} alt="" fill className="object-cover" unoptimized />
+                    <PreviewImage src={slot.src} />
                   ) : (
                     <>
                       <div className="mb-0.5 h-2 w-3/4 rounded-full bg-foreground/20" />
